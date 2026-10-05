@@ -151,46 +151,44 @@ numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is scanned on a dense $V$ grid and t
 non--monotonic behaviour of a degenerate fit); \code{NaN} if $Q^\star$ is never
 reached.
 
-\section{The analytic model: reduced two--step parametrization}
+\section{The analytic model: gain term with a physical floor}
 \label{sec:global}
-The four--parameter form of Eq.~\ref{eq:qv} is partly degenerate
-($p_0,p_1,p_2$ anti--correlated), so the individually fitted $p_k(\phi)$ scatter
-and no smooth law describes them well. The remedy is to remove the degenerate
-parameters physically:
-\begin{itemize}[nosep]
-  \item fix $p_0 = Q_{\mathrm{floor}} = \SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}),
-        the charge a diode collects once the gain layer is gone (the no--gain,
-        bulk MIP charge);
-  \item drop the linear term $p_1$ (it is redundant: removing it leaves the
-        per--fluence $\chi^2$ essentially unchanged).
-\end{itemize}
-\paragraph{Step A (per fluence).} Fit the \emph{reduced} curve
+The four--parameter form of Eq.~\ref{eq:qv} is over--parametrized for this data:
+the per--fluence fits give $p_0$ and $p_1$ with relative errors of several hundred
+to several million percent (they are not determined), and $p_0,p_1,p_2$ are
+strongly anti--correlated. Using independent laws for all four makes the surface
+diverge (prediction RMS $\sim\!28\,\fC$ vs $\sim\!1.5\,\fC$ below). The data
+constrain only the \emph{gain} term, so the model keeps just that:
 \begin{equation}
-  Q(V) = Q_{\mathrm{floor}} + \exp\!\big(p_2 + p_3\,V\big),
-  \label{eq:reduced}
-\end{equation}
-with only two free parameters. With $p_0,p_1$ gone, $p_2(\phi)$ and $p_3(\phi)$
-come out smooth and monotonic.
-
-\paragraph{Step B (vs fluence).} Give each an \emph{analytic} law
-$p_2(\phi)$, $p_3(\phi)$ (linear or exponential, chosen by AIC as in
-Sec.~\ref{sec:step2}, laws (ii)--(iv); \code{interp} is never used here). The
-model is then the single analytic surface
-\begin{equation}
-  \boxed{\,Q(V,\phi) = Q_{\mathrm{floor}} + \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
+  \boxed{\,Q(V,\phi) = \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
   \label{eq:global}
 \end{equation}
-one continuous law with no node kinks that, as the gain term vanishes at high
-fluence, tends to $Q_{\mathrm{floor}}$ rather than to zero. The bias for a target
-charge $Q^\star>Q_{\mathrm{floor}}$ is explicit:
+
+\paragraph{Physical floor.} The collected charge never drops below the no--gain
+(bulk MIP) charge $Q_{\mathrm{floor}} = \SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}):
+at very high fluence, whatever the voltage, the minimum is $Q_{\mathrm{floor}}$.
+This is imposed as a \emph{floor} (a clamp), not as an additive constant, so it
+does not inflate $Q$ in the operating range:
 \begin{equation}
-  V(\phi) = \frac{\ln\!\big(Q^\star - Q_{\mathrm{floor}}\big) - p_2(\phi)}{p_3(\phi)}.
+  Q_{\mathrm{phys}}(V,\phi) = \max\!\big(Q_{\mathrm{floor}},\,
+      \exp(p_2(\phi)+p_3(\phi)V)\big).
 \end{equation}
-With linear laws $p_2(\phi)=a_0+a_1\phi$, $p_3(\phi)=b_0+b_1\phi$ this is exactly
-$Q=Q_{\mathrm{floor}}+\exp[(a_0+a_1\phi)+(b_0+b_1\phi)V]$. This model
-(\code{model.GlobalSurface}, \code{model.fit\_global}) is what the prediction and
-operating--point plots use; the full four--parameter per--fluence fits of
-Sec.~\ref{sec:step1} remain available as diagnostics.
+Because the gain exponent decreases with fluence, $\exp(\dots)\to0$ at high $\phi$
+and the clamp delivers a flat $Q_{\mathrm{floor}}$ for every $V$ --- consistent
+with the physics, and impossible with a $p_0$ (which would set the floor at $0\,$V
+too) or a $p_1 V$ term (which would make the high--$\phi$ charge grow with $V$).
+
+\paragraph{Step A (per fluence).} $p_2,p_3$ are obtained from a \emph{linear
+regression of} $\ln Q$ \emph{vs} $V$ (the exact, bound--free, seed--free fit for an
+exponential; weight $Q^2$ for the $\sigma_Q=$const error). This is stable where a
+direct $\exp$ fit can diverge.
+
+\paragraph{Step B (vs fluence).} Each of $p_2(\phi),p_3(\phi)$ gets an analytic
+law (linear or exponential, chosen by AIC, Sec.~\ref{sec:step2}; \code{interp}
+is never used here). For HPK both come out exponential. The bias for a target
+charge $Q^\star$ is explicit, $V(\phi) = [\ln Q^\star - p_2(\phi)]/p_3(\phi)$.
+This model is \code{model.GlobalSurface} / \code{model.fit\_global}; the
+four--parameter per--fluence fits of Sec.~\ref{sec:step1} remain as diagnostics.
 
 \section{Operating point with the SEB limit}
 Each production has a single--event--burnout ceiling $V_{\mathrm{SEB}}$

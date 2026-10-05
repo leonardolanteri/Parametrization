@@ -342,40 +342,34 @@ def build_QVphi_TF2(law, name, phi_max=1.6e15, V_max=650.0):
 #   Step B: give p2 and p3 an ANALYTIC law vs fluence  (lin or exp, auto by AIC)
 #   =>      Q(V,phi) = Q_floor + exp( p2(phi) + p3(phi)*V ),  -> Q_floor at high phi
 # ===========================================================================
-def fit_QV_reduced(V, Q, qfloor, name="qvr"):
-    """Fit Q(V) = qfloor + exp(p2 + p3*V). Returns p2, p3, err2, err3, chi2, ndf."""
+def fit_QV_reduced(V, Q, name="qvr"):
+    """
+    Fit Q(V) = exp(p2 + p3*V) by a weighted linear regression of ln(Q) vs V.
+    This is the natural, bound-free, seed-free fit for an exponential and is
+    numerically stable (the direct exp fit can diverge at some fluences). The
+    weight Q^2 reproduces the sigma_Q = const error in log space.
+    Returns p2, p3, err2, err3, chi2, ndf.
+    """
     V = np.asarray(V, dtype=float)
     Q = np.asarray(Q, dtype=float)
-    Qerr = np.full(len(Q), config.ERR_Q)
-    Verr = np.full(len(V), config.ERR_V)
-    seed = auto_seed_QV(V, Q)
-    s2, s3 = seed[2], (seed[3] if seed[3] > 0 else 0.01)
-    gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q),
-                           array('d', Verr), array('d', Qerr))
-    f = ROOT.TF1("fr_" + name, f"{qfloor}+exp([0]+[1]*x)",
-                 float(V.min()), float(V.max()))
-    f.SetParameters(s2, s3)
-    f.SetParLimits(1, 0.0, 0.2)                 # p3 >= 0
-    res = gr.Fit(f, "SQ")
-    p2, p3 = f.GetParameter(0), f.GetParameter(1)
-    e2, e3 = f.GetParError(0), f.GetParError(1)
-    ok = bool(res.Get()) and res.IsValid() and np.all(np.isfinite([p2, p3]))
-    if not ok and HAVE_SCIPY:
-        from scipy.optimize import curve_fit
-        try:
-            popt, pcov = curve_fit(lambda x, a, b: qfloor + np.exp(a + b * x),
-                                   V, Q, p0=[s2, s3], sigma=Qerr,
-                                   absolute_sigma=True, maxfev=40000)
-            p2, p3 = popt
-            e2, e3 = np.sqrt(np.diag(pcov))
-        except Exception:
-            pass
-    return (float(p2), float(p3), float(e2), float(e3),
-            float(f.GetChisquare()), int(f.GetNDF()))
+    good = Q > 0
+    V, Q = V[good], Q[good]
+    w = Q                                   # ~ 1/sigma(lnQ) = Q/sigma_Q
+    (p3, p2), cov = np.polyfit(V, np.log(Q), 1, w=w, cov=True)
+    e3, e2 = np.sqrt(np.diag(cov))
+    pred = np.exp(p2 + p3 * V)
+    chi2 = float(np.sum(((Q - pred) / config.ERR_Q) ** 2))
+    ndf = max(len(V) - 2, 1)
+    return float(p2), float(p3), float(e2), float(e3), chi2, ndf
 
 
 class GlobalSurface:
-    """Q(V,phi) = qfloor + exp( p2(phi) + p3(phi)*V ) with analytic p2, p3 laws."""
+    """
+    Charge model  Q(V,phi) = exp( p2(phi) + p3(phi)*V )  with analytic p2, p3.
+    `qfloor` is the physical minimum (no-gain / bulk charge): the collected charge
+    never drops below it, so the OBTAINABLE charge is max(qfloor, Q). It is a floor,
+    not an additive term (Q is not inflated by qfloor at low fluence / low V).
+    """
     def __init__(self, production, qfloor, law2, law3, fluences,
                  p2_nodes, p3_nodes, p2_err, p3_err):
         self.production = production
@@ -393,19 +387,24 @@ class GlobalSurface:
     def p3(self, phi):
         return eval_param(self.law3, phi)
 
-    def Q(self, V, phi):
+    def Q_gain(self, V, phi):
+        """Gain-amplified charge exp(p2+p3*V), without the floor."""
         V = np.asarray(V, dtype=float)
         arg = np.clip(self.p2(phi) + self.p3(phi) * V, -700.0, 700.0)
-        return self.qfloor + np.exp(arg)
+        return np.exp(arg)
+
+    def Q(self, V, phi):
+        """Collected charge with the physical floor applied: max(qfloor, gain)."""
+        return np.maximum(self.qfloor, self.Q_gain(V, phi))
 
     def V_for_Q(self, Q_target, phi, v_lo=0.0, v_hi=1200.0, n_scan=1200):
-        """Bias to reach Q_target at phi (analytic inverse; monotonic in V)."""
+        """Bias to reach Q_target at phi (analytic inverse of the gain term)."""
         if Q_target <= self.qfloor:
             return v_lo
         p3 = float(self.p3(phi))
         if p3 <= 0:
             return np.nan
-        V = (np.log(Q_target - self.qfloor) - float(self.p2(phi))) / p3
+        V = (np.log(Q_target) - float(self.p2(phi))) / p3
         return float(V) if v_lo <= V <= v_hi else (np.nan if V > v_hi else v_lo)
 
     @staticmethod
@@ -418,18 +417,17 @@ class GlobalSurface:
         return f"{nm}(phi) = interp(nodes)"
 
     def law_string(self):
-        return (f"Q(V,phi) = p0 + p1*V + exp( p2(phi) + p3(phi)*V )\n"
-                f"       p0(phi) = {self.qfloor:.3g}   (fixed = Q_FLOOR)\n"
-                f"       p1(phi) = 0        (fixed; unconstrained by data)\n"
+        return (f"Q(V,phi) = exp( p2(phi) + p3(phi)*V )   "
+                f"[floored at Q_FLOOR = {self.qfloor:.3g} fC]\n"
                 f"       {self._law_str(self.law2, 'p2')}\n"
                 f"       {self._law_str(self.law3, 'p3')}")
 
     def tf2(self, name=None, phi_max=1.6e15, V_max=650.0):
-        """The analytic surface as a ROOT TF2 (x = phi, y = V)."""
+        """The gain surface as a ROOT TF2 (x = phi, y = V); floor not applied."""
         name = name or ("gsurf_" + _short(self.production))
         e2, v2, i1 = _param_expr(self.law2, 0)
         e3, v3, i2 = _param_expr(self.law3, i1)
-        f = ROOT.TF2(name, f"{self.qfloor} + exp( {e2} + ({e3})*y )",
+        f = ROOT.TF2(name, f"exp( {e2} + ({e3})*y )",
                      0.0, phi_max, 0.0, V_max)
         for i, v in enumerate(v2 + v3):
             f.SetParameter(i, v)
@@ -441,22 +439,24 @@ class GlobalSurface:
 
 def fit_global(sensors, production, setup=None, qfloor=None, mode=None):
     """
-    Build the analytic surface for one production:
-      per-fluence reduced fits -> p2(phi_j), p3(phi_j) -> analytic laws (lin/exp).
-    `mode` in {'auto','lin','exp'} selects the vs-fluence law (default 'auto').
+    Build the analytic surface for one production (2-step):
+      A) per fluence, a stable log-linear fit  Q(V)=exp(p2+p3*V)  -> p2_j, p3_j
+      B) analytic laws p2(phi), p3(phi)  (lin/exp, auto by AIC; config.LAW_MODE)
+    The physical minimum Q_FLOOR is applied as a clamp (max), not added.
     """
     setup = setup or config.FIT_SETUP
     qfloor = config.Q_FLOOR if qfloor is None else qfloor
     mode = mode or config.LAW_MODE
     force = None if mode in (None, 'auto', 'interp') else mode   # never interp
     flus = data_io.fluences_of(sensors, production, setup)
-    p2n, p3n, e2n, e3n = [], [], [], []
-    for phi in flus:
-        V, Q = data_io.pooled(sensors, production, phi, setup)
-        p2, p3, e2, e3, _, _ = fit_QV_reduced(
-            V, Q, qfloor, name=f"{_short(production)}_{phi:.1e}")
-        p2n.append(p2); p3n.append(p3); e2n.append(e2); e3n.append(e3)
+
     phi = np.asarray(flus, dtype=float)
+    p2n, p3n, e2n, e3n = [], [], [], []
+    for ph in flus:
+        v, q = data_io.pooled(sensors, production, ph, setup)
+        p2, p3, e2, e3, _, _ = fit_QV_reduced(v, q, name=f"{_short(production)}_{ph:.0e}")
+        p2n.append(p2); p3n.append(p3); e2n.append(e2); e3n.append(e3)
+
     law2 = fit_param_vs_fluence(phi, np.array(p2n), np.array(e2n), force=force)
     law3 = fit_param_vs_fluence(phi, np.array(p3n), np.array(e3n), force=force)
     return GlobalSurface(production, qfloor, law2, law3, phi,
