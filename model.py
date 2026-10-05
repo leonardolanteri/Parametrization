@@ -320,50 +320,101 @@ def build_QVphi_TF2(law, name, phi_max=1.6e15, V_max=650.0):
 # helpers
 # ===========================================================================
 # ===========================================================================
-# GLOBAL surface: one smooth trend over the whole fluence range, with a
-# physical no-gain floor. Fits all pooled (V, Q) points simultaneously with
-#     Q(V, phi) = Q_floor + exp( a0 + a1*phi + (b0 + b1*phi)*V )
-# -> single continuous law (no node-to-node kinks) that asymptotes to Q_floor
-#    (the no-gain diode charge) at high fluence.
+# ANALYTIC 2-step model (the recommended parametrization)
+#   Step A: at each fluence fit the REDUCED curve   Q(V) = Q_floor + exp(p2 + p3*V)
+#           (p0 fixed to the no-gain floor, p1 dropped -> removes the degeneracy,
+#            so p2(phi) and p3(phi) come out smooth and monotonic)
+#   Step B: give p2 and p3 an ANALYTIC law vs fluence  (lin or exp, auto by AIC)
+#   =>      Q(V,phi) = Q_floor + exp( p2(phi) + p3(phi)*V ),  -> Q_floor at high phi
 # ===========================================================================
+def fit_QV_reduced(V, Q, qfloor, name="qvr"):
+    """Fit Q(V) = qfloor + exp(p2 + p3*V). Returns p2, p3, err2, err3, chi2, ndf."""
+    V = np.asarray(V, dtype=float)
+    Q = np.asarray(Q, dtype=float)
+    Qerr = np.full(len(Q), config.ERR_Q)
+    Verr = np.full(len(V), config.ERR_V)
+    seed = auto_seed_QV(V, Q)
+    s2, s3 = seed[2], (seed[3] if seed[3] > 0 else 0.01)
+    gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q),
+                           array('d', Verr), array('d', Qerr))
+    f = ROOT.TF1("fr_" + name, f"{qfloor}+exp([0]+[1]*x)",
+                 float(V.min()), float(V.max()))
+    f.SetParameters(s2, s3)
+    f.SetParLimits(1, 0.0, 0.2)                 # p3 >= 0
+    res = gr.Fit(f, "SQ")
+    p2, p3 = f.GetParameter(0), f.GetParameter(1)
+    e2, e3 = f.GetParError(0), f.GetParError(1)
+    ok = bool(res.Get()) and res.IsValid() and np.all(np.isfinite([p2, p3]))
+    if not ok and HAVE_SCIPY:
+        from scipy.optimize import curve_fit
+        try:
+            popt, pcov = curve_fit(lambda x, a, b: qfloor + np.exp(a + b * x),
+                                   V, Q, p0=[s2, s3], sigma=Qerr,
+                                   absolute_sigma=True, maxfev=40000)
+            p2, p3 = popt
+            e2, e3 = np.sqrt(np.diag(pcov))
+        except Exception:
+            pass
+    return (float(p2), float(p3), float(e2), float(e3),
+            float(f.GetChisquare()), int(f.GetNDF()))
+
+
 class GlobalSurface:
-    def __init__(self, production, popt, qfloor, fluences):
+    """Q(V,phi) = qfloor + exp( p2(phi) + p3(phi)*V ) with analytic p2, p3 laws."""
+    def __init__(self, production, qfloor, law2, law3, fluences,
+                 p2_nodes, p3_nodes, p2_err, p3_err):
         self.production = production
-        self.popt = tuple(float(x) for x in popt)      # a0, a1, b0, b1
         self.qfloor = float(qfloor)
+        self.law2, self.law3 = law2, law3
         self.fluences = np.asarray(fluences, dtype=float)
+        self.p2_nodes = np.asarray(p2_nodes, dtype=float)
+        self.p3_nodes = np.asarray(p3_nodes, dtype=float)
+        self.p2_err = np.asarray(p2_err, dtype=float)
+        self.p3_err = np.asarray(p3_err, dtype=float)
+
+    def p2(self, phi):
+        return eval_param(self.law2, phi)
+
+    def p3(self, phi):
+        return eval_param(self.law3, phi)
 
     def Q(self, V, phi):
-        a0, a1, b0, b1 = self.popt
         V = np.asarray(V, dtype=float)
-        arg = np.clip(a0 + a1 * phi + (b0 + b1 * phi) * V, -700.0, 700.0)
+        arg = np.clip(self.p2(phi) + self.p3(phi) * V, -700.0, 700.0)
         return self.qfloor + np.exp(arg)
 
     def V_for_Q(self, Q_target, phi, v_lo=0.0, v_hi=1200.0, n_scan=1200):
-        """Lowest bias reaching Q_target at phi (the surface is monotonic in V)."""
+        """Bias to reach Q_target at phi (analytic inverse; monotonic in V)."""
         if Q_target <= self.qfloor:
             return v_lo
-        a0, a1, b0, b1 = self.popt
-        b = b0 + b1 * phi
-        if b <= 0:
+        p3 = float(self.p3(phi))
+        if p3 <= 0:
             return np.nan
-        arg = np.log(Q_target - self.qfloor) - (a0 + a1 * phi)
-        V = arg / b
+        V = (np.log(Q_target - self.qfloor) - float(self.p2(phi))) / p3
         return float(V) if v_lo <= V <= v_hi else (np.nan if V > v_hi else v_lo)
 
+    @staticmethod
+    def _law_str(law, nm):
+        if law['kind'] == 'lin':
+            return f"{nm}(phi) = {law['m']:+.4e}*phi {law['q']:+.4e}"
+        if law['kind'] == 'exp':
+            return (f"{nm}(phi) = {law['a']:+.4e} + exp({law['b']:+.4e}*phi "
+                    f"{law['c']:+.4e})")
+        return f"{nm}(phi) = interp(nodes)"
+
     def law_string(self):
-        a0, a1, b0, b1 = self.popt
-        return ("Q(V,phi) = %.3g + exp[ (%.4e %+.4e*phi) + (%.4e %+.4e*phi)*V ]"
-                % (self.qfloor, a0, a1, b0, b1))
+        return (f"Q(V,phi) = {self.qfloor:.3g} + exp( p2(phi) + p3(phi)*V )\n"
+                f"       {self._law_str(self.law2, 'p2')}\n"
+                f"       {self._law_str(self.law3, 'p3')}")
 
     def tf2(self, name=None, phi_max=1.6e15, V_max=650.0):
         """The analytic surface as a ROOT TF2 (x = phi, y = V)."""
-        a0, a1, b0, b1 = self.popt
         name = name or ("gsurf_" + _short(self.production))
-        f = ROOT.TF2(name,
-                     f"{self.qfloor} + exp(([0]+[1]*x) + ([2]+[3]*x)*y)",
+        e2, v2, i1 = _param_expr(self.law2, 0)
+        e3, v3, i2 = _param_expr(self.law3, i1)
+        f = ROOT.TF2(name, f"{self.qfloor} + exp( {e2} + ({e3})*y )",
                      0.0, phi_max, 0.0, V_max)
-        for i, v in enumerate((a0, a1, b0, b1)):
+        for i, v in enumerate(v2 + v3):
             f.SetParameter(i, v)
         f.GetXaxis().SetTitle("Fluence [n_{eq}/cm^{2}]")
         f.GetYaxis().SetTitle("V [V]")
@@ -371,45 +422,33 @@ class GlobalSurface:
         return f
 
 
-def fit_global(sensors, production, setup=None, qfloor=None):
-    """Fit the global smooth surface (with floor) to all pooled points."""
-    if not HAVE_SCIPY:
-        raise RuntimeError("fit_global needs scipy")
-    from scipy.optimize import curve_fit
+def fit_global(sensors, production, setup=None, qfloor=None, mode=None):
+    """
+    Build the analytic surface for one production:
+      per-fluence reduced fits -> p2(phi_j), p3(phi_j) -> analytic laws (lin/exp).
+    `mode` in {'auto','lin','exp'} selects the vs-fluence law (default 'auto').
+    """
     setup = setup or config.FIT_SETUP
     qfloor = config.Q_FLOOR if qfloor is None else qfloor
+    mode = mode or 'auto'
+    force = None if mode in (None, 'auto', 'interp') else mode   # never interp
     flus = data_io.fluences_of(sensors, production, setup)
-    V, Q, PH = [], [], []
+    p2n, p3n, e2n, e3n = [], [], [], []
     for phi in flus:
-        v, q = data_io.pooled(sensors, production, phi, setup)
-        V += list(v); Q += list(q); PH += [phi] * len(v)
-    V, Q, PH = np.array(V), np.array(Q), np.array(PH)
-
-    def surf(X, a0, a1, b0, b1):
-        v, ph = X
-        return qfloor + np.exp(a0 + a1 * ph + (b0 + b1 * ph) * v)
-
-    sig = np.full(len(Q), config.ERR_Q)
-    best = None
-    for seed in ([-2.0, -1e-15, 0.035, -1.5e-17],
-                 [0.0, -5e-15, 0.02, 0.0],
-                 [1.0, -1e-14, 0.015, 1e-18]):
-        try:
-            popt, _ = curve_fit(surf, (V, PH), Q, p0=seed, sigma=sig,
-                                absolute_sigma=True, maxfev=200000)
-            rms = float(np.sqrt(np.mean((Q - surf((V, PH), *popt)) ** 2)))
-            if best is None or rms < best[1]:
-                best = (popt, rms)
-        except Exception:
-            continue
-    if best is None:
-        raise RuntimeError(f"global fit failed for {production}")
-    return GlobalSurface(production, best[0], qfloor, flus)
+        V, Q = data_io.pooled(sensors, production, phi, setup)
+        p2, p3, e2, e3, _, _ = fit_QV_reduced(
+            V, Q, qfloor, name=f"{_short(production)}_{phi:.1e}")
+        p2n.append(p2); p3n.append(p3); e2n.append(e2); e3n.append(e3)
+    phi = np.asarray(flus, dtype=float)
+    law2 = fit_param_vs_fluence(phi, np.array(p2n), np.array(e2n), force=force)
+    law3 = fit_param_vs_fluence(phi, np.array(p3n), np.array(e3n), force=force)
+    return GlobalSurface(production, qfloor, law2, law3, phi,
+                         p2n, p3n, e2n, e3n)
 
 
-def fit_all_global(sensors=None, setup=None, qfloor=None):
+def fit_all_global(sensors=None, setup=None, qfloor=None, mode=None):
     sensors = sensors if sensors is not None else data_io.load_sensors()
-    return {prod: fit_global(sensors, prod, setup, qfloor)
+    return {prod: fit_global(sensors, prod, setup, qfloor, mode)
             for prod in data_io.productions(sensors)}
 
 

@@ -52,7 +52,7 @@ assigned (editable in \code{config.py}):
 A constant $\sigma_Q$ does not bias the central fit values; it only sets the
 weighting and the reported parameter errors.
 
-\section{Step 1 --- charge vs bias at fixed fluence}
+\section{Step 1 --- charge vs bias at fixed fluence}\label{sec:step1}
 At each fluence the pooled $Q(V)$ points are fitted with
 \begin{equation}
   \boxed{\,Q(V) = p_0 + p_1\,V + \exp\!\big(p_2 + p_3\,V\big)\,}
@@ -84,7 +84,7 @@ silent fallback.
 The outputs are the four parameters $p_k(\phi_j)$ and their errors at each measured
 fluence $\phi_j$, with the fit $\chi^2/\mathrm{ndf}$.
 
-\section{Step 2 --- parameters vs fluence}
+\section{Step 2 --- parameters vs fluence}\label{sec:step2}
 Each parameter $p_k$ is then modelled as a function of $\phi$. Four laws are
 available (\code{config.PARAM\_MODE}); let $\{(\phi_j,p_{k,j},\sigma_{k,j})\}$ be
 the points from Step~1.
@@ -151,33 +151,46 @@ numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is scanned on a dense $V$ grid and t
 non--monotonic behaviour of a degenerate fit); \code{NaN} if $Q^\star$ is never
 reached.
 
-\section{Global surface: one smooth trend with a physical floor}
+\section{The analytic model: reduced two--step parametrization}
 \label{sec:global}
-The node-by-node interpolation reproduces every measured fluence but is
-piecewise (a visible change of slope at each node) and, extrapolated beyond the
-last fluence, drives the charge to zero. For the operating--point study a single
-\emph{smooth} trend over the whole range is preferable, with the correct physical
-asymptote. All pooled points of a production are therefore fitted
-\emph{simultaneously} with the three/four--parameter surface
+The four--parameter form of Eq.~\ref{eq:qv} is partly degenerate
+($p_0,p_1,p_2$ anti--correlated), so the individually fitted $p_k(\phi)$ scatter
+and no smooth law describes them well. The remedy is to remove the degenerate
+parameters physically:
+\begin{itemize}[nosep]
+  \item fix $p_0 = Q_{\mathrm{floor}} = \SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}),
+        the charge a diode collects once the gain layer is gone (the no--gain,
+        bulk MIP charge);
+  \item drop the linear term $p_1$ (it is redundant: removing it leaves the
+        per--fluence $\chi^2$ essentially unchanged).
+\end{itemize}
+\paragraph{Step A (per fluence).} Fit the \emph{reduced} curve
 \begin{equation}
-  \boxed{\,Q(V,\phi) = Q_{\mathrm{floor}} +
-     \exp\!\big(a_0 + a_1\phi + (b_0 + b_1\phi)\,V\big)\,}
+  Q(V) = Q_{\mathrm{floor}} + \exp\!\big(p_2 + p_3\,V\big),
+  \label{eq:reduced}
+\end{equation}
+with only two free parameters. With $p_0,p_1$ gone, $p_2(\phi)$ and $p_3(\phi)$
+come out smooth and monotonic.
+
+\paragraph{Step B (vs fluence).} Give each an \emph{analytic} law
+$p_2(\phi)$, $p_3(\phi)$ (linear or exponential, chosen by AIC as in
+Sec.~\ref{sec:step2}, laws (ii)--(iv); \code{interp} is never used here). The
+model is then the single analytic surface
+\begin{equation}
+  \boxed{\,Q(V,\phi) = Q_{\mathrm{floor}} + \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
   \label{eq:global}
 \end{equation}
-where $Q_{\mathrm{floor}}=\SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}) is the charge a
-diode collects once the gain layer is gone (the no--gain, bulk MIP charge). The
-coefficients $(a_0,a_1,b_0,b_1)$ are obtained with a single weighted least--squares
-fit ($\sigma_Q$). This gives one continuous law (no node kinks) that, as the gain
-term vanishes at high fluence, tends to $Q_{\mathrm{floor}}$ rather than to zero.
-The inverse $V(\phi)$ for a target charge $Q^\star>Q_{\mathrm{floor}}$ is explicit,
+one continuous law with no node kinks that, as the gain term vanishes at high
+fluence, tends to $Q_{\mathrm{floor}}$ rather than to zero. The bias for a target
+charge $Q^\star>Q_{\mathrm{floor}}$ is explicit:
 \begin{equation}
-  V(\phi) = \frac{\ln\!\big(Q^\star - Q_{\mathrm{floor}}\big) - (a_0+a_1\phi)}
-                 {b_0 + b_1\phi}.
+  V(\phi) = \frac{\ln\!\big(Q^\star - Q_{\mathrm{floor}}\big) - p_2(\phi)}{p_3(\phi)}.
 \end{equation}
-This global surface (\code{model.GlobalSurface}, \code{model.fit\_global}) is what
-the operating--point plots below use; the per--fluence fits and the
-\code{interp}/\code{auto} laws of the previous sections remain available for
-inspecting individual fluences.
+With linear laws $p_2(\phi)=a_0+a_1\phi$, $p_3(\phi)=b_0+b_1\phi$ this is exactly
+$Q=Q_{\mathrm{floor}}+\exp[(a_0+a_1\phi)+(b_0+b_1\phi)V]$. This model
+(\code{model.GlobalSurface}, \code{model.fit\_global}) is what the prediction and
+operating--point plots use; the full four--parameter per--fluence fits of
+Sec.~\ref{sec:step1} remain available as diagnostics.
 
 \section{Operating point with the SEB limit}
 Each production has a single--event--burnout ceiling $V_{\mathrm{SEB}}$

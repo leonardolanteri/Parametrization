@@ -128,6 +128,35 @@ def plot_prediction(result, save=None):
     return c
 
 
+def plot_param_laws(surface, save=None):
+    """p2(phi) and p3(phi): reduced per-fluence points + the analytic law."""
+    prod = surface.production
+    phi = surface.fluences
+    phi_err = array('d', [config.RELERR_PHI * p for p in phi])
+    c = ROOT.TCanvas(_cname("cPL_" + model._short(prod)),
+                     "parameter laws - " + prod, 900, 400)
+    c.Divide(2, 1)
+    keep = []
+    specs = [(surface.p2_nodes, surface.p2_err, surface.law2, surface.p2, 'p2'),
+             (surface.p3_nodes, surface.p3_err, surface.law3, surface.p3, 'p3')]
+    for i, (nodes, errs, law, fn, nm) in enumerate(specs):
+        c.cd(i + 1)
+        ROOT.gPad.SetLeftMargin(0.17); ROOT.gPad.SetBottomMargin(0.14)
+        g = ROOT.TGraphErrors(len(phi), array('d', phi), array('d', nodes),
+                              phi_err, array('d', errs))
+        kind = law['kind']
+        g.SetTitle(f"{nm}(#phi)  [{kind}] - {prod};#phi [n_{{eq}}/cm^{{2}}];{nm}")
+        g.SetMarkerStyle(21); g.SetMarkerSize(1.1); g.Draw("ap")
+        xs = np.linspace(-0.05e15, max(phi.max() * 1.15, 1e15), 250)
+        gl = ROOT.TGraph(len(xs), array('d', xs), array('d', fn(xs)))
+        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
+        keep += [g, gl]
+    c.Update(); _KEEP.extend(keep + [c])
+    if save:
+        c.SaveAs(save)
+    return c
+
+
 def plot_surface_vs_data(sensors, surface, setup=None, save=None):
     """
     Overlay the single analytic global surface Q(V,phi) on the pooled data at

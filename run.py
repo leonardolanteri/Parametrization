@@ -69,7 +69,8 @@ def main():
         for name, r in results.items():
             s = model._short(name)
             plots.plot_QV(sensors, r, save=os.path.join(outdir, f"QV_{s}.pdf"))
-            plots.plot_params(r, save=os.path.join(outdir, f"par_{s}.pdf"))
+            plots.plot_param_laws(surfaces[name],
+                                  save=os.path.join(outdir, f"param_laws_{s}.pdf"))
             plots.plot_surface_vs_data(sensors, surfaces[name],
                                        save=os.path.join(outdir, f"surface_vs_data_{s}.pdf"))
         plots.plot_bias_for_target(surfaces,

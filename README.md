@@ -53,18 +53,23 @@ converges without per-point tuning. Only uniform physical bounds are applied
 
 Combined: `Q(V,φ) = P0(φ) + P1(φ)·V + exp( P2(φ) + P3(φ)·V )`.
 
-**Global surface (operating-point plots).** For a single smooth trend over the
-whole fluence range — with the correct physical asymptote — all pooled points are
-fitted at once with
+**Analytic model (recommended).** The headline model is a reduced two-step
+parametrization with analytic parameter laws:
+
+1. fix `p0 = Q_FLOOR = 0.55 fC` (no-gain bulk charge) and drop the redundant `p1`
+   → per fluence fit the reduced curve `Q(V) = Q_FLOOR + exp(p2 + p3·V)`;
+2. give each parameter an **analytic law** `p2(φ)`, `p3(φ)` (linear or exponential,
+   auto by AIC — never `interp`).
 
 ```
-Q(V,φ) = Q_FLOOR + exp( a0 + a1·φ + (b0 + b1·φ)·V )
+Q(V,φ) = Q_FLOOR + exp( p2(φ) + p3(φ)·V )
 ```
 
-where `Q_FLOOR = 0.55 fC` is the no-gain (bulk) charge. This has no node-to-node
-kink and the charge converges to `Q_FLOOR` at high fluence (not to 0). It is used
-by the charge/bias-vs-fluence and fixed-charge plots
-(`model.fit_global` / `model.GlobalSurface`).
+Removing the degenerate `p0,p1` makes `p2(φ)`, `p3(φ)` smooth and monotonic, so one
+analytic law describes the whole fluence range (no kink) and the charge converges
+to `Q_FLOOR` at high fluence (not to 0). Built by `model.fit_global` →
+`model.GlobalSurface` (`.p2(φ)`, `.p3(φ)`, `.Q(V,φ)`, `.V_for_Q`, `.tf2()`); the
+4-parameter per-fluence fits remain as diagnostics.
 
 ## Settings (`config.py`)
 
