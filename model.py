@@ -356,6 +356,20 @@ class GlobalSurface:
         return ("Q(V,phi) = %.3g + exp[ (%.4e %+.4e*phi) + (%.4e %+.4e*phi)*V ]"
                 % (self.qfloor, a0, a1, b0, b1))
 
+    def tf2(self, name=None, phi_max=1.6e15, V_max=650.0):
+        """The analytic surface as a ROOT TF2 (x = phi, y = V)."""
+        a0, a1, b0, b1 = self.popt
+        name = name or ("gsurf_" + _short(self.production))
+        f = ROOT.TF2(name,
+                     f"{self.qfloor} + exp(([0]+[1]*x) + ([2]+[3]*x)*y)",
+                     0.0, phi_max, 0.0, V_max)
+        for i, v in enumerate((a0, a1, b0, b1)):
+            f.SetParameter(i, v)
+        f.GetXaxis().SetTitle("Fluence [n_{eq}/cm^{2}]")
+        f.GetYaxis().SetTitle("V [V]")
+        f.SetTitle(f"Q(V,#phi) - {self.production}")
+        return f
+
 
 def fit_global(sensors, production, setup=None, qfloor=None):
     """Fit the global smooth surface (with floor) to all pooled points."""

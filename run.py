@@ -70,7 +70,8 @@ def main():
             s = model._short(name)
             plots.plot_QV(sensors, r, save=os.path.join(outdir, f"QV_{s}.pdf"))
             plots.plot_params(r, save=os.path.join(outdir, f"par_{s}.pdf"))
-            plots.plot_prediction(r, save=os.path.join(outdir, f"pred_{s}.pdf"))
+            plots.plot_surface_vs_data(sensors, surfaces[name],
+                                       save=os.path.join(outdir, f"surface_vs_data_{s}.pdf"))
         plots.plot_bias_for_target(surfaces,
                                    save=os.path.join(outdir, "bias.pdf"))
         plots.plot_charge_bias_vs_fluence(

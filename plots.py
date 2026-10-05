@@ -128,6 +128,41 @@ def plot_prediction(result, save=None):
     return c
 
 
+def plot_surface_vs_data(sensors, surface, setup=None, save=None):
+    """
+    Overlay the single analytic global surface Q(V,phi) on the pooled data at
+    each measured fluence (one pad per fluence). Shows how well one analytic law
+    describes every fluence.
+    """
+    setup = setup or config.FIT_SETUP
+    prod = surface.production
+    flus = list(surface.fluences)
+    n = len(flus)
+    c = ROOT.TCanvas(_cname("cSurfData_" + model._short(prod)),
+                     "surface vs data - " + prod, 360 * max(n, 1), 430)
+    c.Divide(n, 1)
+    for i, phi in enumerate(flus):
+        c.cd(i + 1)
+        ROOT.gPad.SetLeftMargin(0.15)
+        ROOT.gPad.SetBottomMargin(0.13)
+        V, Q = data_io.pooled(sensors, prod, phi, setup)
+        Verr = array('d', np.full(len(V), config.ERR_V))
+        Qerr = array('d', np.full(len(Q), config.ERR_Q))
+        gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q), Verr, Qerr)
+        gr.SetTitle(f"{prod} - {_phi_label(phi)};V [V];Q [fC]")
+        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.8); gr.Draw("ap")
+        vmin, vmax_ = float(V.min()), float(V.max())
+        xs = np.linspace(vmin, vmax_, 200)
+        ys = surface.Q(xs, phi)
+        gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
+        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
+        _KEEP.extend([gr, gl])
+    c.Update(); _KEEP.append(c)
+    if save:
+        c.SaveAs(save)
+    return c
+
+
 def _vmax_for(name, vmax):
     if isinstance(vmax, (int, float)):
         return float(vmax)
