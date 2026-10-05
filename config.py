@@ -32,6 +32,10 @@ RELERR_PHI = 0.10    # relative fluence error (10%)
 PARAM_MODE = "interp"
 MIN_PTS_FOR_EXP = 4
 
+# law used for the analytic parameter laws p2(phi), p3(phi) of the main model
+# (model.fit_global): 'auto' (lin/exp per parameter by AIC), 'lin', or 'exp'.
+LAW_MODE = "auto"
+
 # --- analysis knobs ---------------------------------------------------------
 Q_TARGET = 8.0       # fC, desired charge (e.g. end of life)
 FIT_SETUP = "Beta"   # which setup is fitted; others are shown as cross-check

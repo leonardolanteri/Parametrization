@@ -16,7 +16,18 @@ import model
 
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
+# dashed grid lines at the axis ticks on every pad
+ROOT.gStyle.SetPadGridX(True)
+ROOT.gStyle.SetPadGridY(True)
+ROOT.gStyle.SetGridStyle(2)        # 2 = dashed (3 = dotted)
+ROOT.gStyle.SetGridColor(ROOT.kGray + 1)
+ROOT.gStyle.SetGridWidth(1)
 _KEEP = []
+
+
+def _grid(pad=None):
+    (pad or ROOT.gPad).SetGridx(True)
+    (pad or ROOT.gPad).SetGridy(True)
 _CN = [0]
 
 
@@ -245,6 +256,7 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
     c.SetLeftMargin(0.12)
     c.SetRightMargin(0.13)
     c.SetTopMargin(0.08)
+    _grid(c)
 
     frame = c.DrawFrame(phi_lo / 1e14, 0.0, phi_hi / 1e14, charge_max)
     frame.GetXaxis().SetTitle("Fluence  [10^{14} n_{eq} cm^{-2}]")
@@ -312,6 +324,7 @@ def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
     surfaces = {k: model.as_surface(v) for k, v in surfaces.items()}
     c = ROOT.TCanvas(_cname(f"cBias_{int(Q_target)}"), f"Bias Q={Q_target}", 800, 600)
     ROOT.gPad.SetLeftMargin(0.13)
+    _grid()
     palette = [ROOT.kAzure + 1, ROOT.kOrange + 7, ROOT.kGreen + 2, ROOT.kMagenta + 1]
     leg = ROOT.TLegend(0.15, 0.72, 0.5, 0.88); leg.SetBorderSize(0); leg.SetFillStyle(0)
     first = True

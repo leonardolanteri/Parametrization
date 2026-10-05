@@ -169,26 +169,38 @@ def _fit_exp_root(phi, p, sigma):
     if n < 3:
         return None
     rng = max(np.ptp(p), 1e-9)
-    m, _ = np.polyfit(phi, p, 1)
-    a0 = float(p.min() - 0.05 * rng) if m >= 0 else float(p.max() + 0.05 * rng)
-    excess = np.where((p - a0) > 0, p - a0, 0.05 * rng)
+    # model a + exp(b*phi + c): since exp > 0, the asymptote a is BELOW the data
+    # for any sign of the slope -> seed a0 just below the minimum, then the
+    # positive excess (p - a0) gives (b, c) from a log fit.
+    a0 = float(p.min() - 0.1 * rng)
+    excess = np.clip(p - a0, 1e-9, None)
     try:
         b0, c0 = np.polyfit(phi, np.log(excess), 1)
     except Exception:
-        b0, c0 = np.log(rng) / max(np.ptp(phi), 1.0), np.log(rng)
-    gr = ROOT.TGraphErrors(n, array('d', phi), array('d', p),
-                           array('d', np.zeros(n)), array('d', sigma))
-    f = ROOT.TF1("fexp_param", "[0]+exp([1]*x+[2])",
-                 float(phi.min()), float(phi.max()))
-    f.SetParameters(a0, b0, c0)
-    res = gr.Fit(f, "SQN")
-    if not (bool(res.Get()) and res.IsValid()):
-        return None
-    a, b, cc = (f.GetParameter(i) for i in range(3))
-    if not np.all(np.isfinite([a, b, cc])):
-        return None
-    c = dict(kind='exp', a=float(a), b=float(b), c=float(cc))
-    return c, _chi2(phi, p, sigma, c), 3
+        b0, c0 = -1.0 / max(np.ptp(phi), 1.0), np.log(rng)
+    best = None
+    for a_seed in (a0, float(p.min() - 0.5 * rng), float(p.min() - 2.0 * rng)):
+        ex = np.clip(p - a_seed, 1e-9, None)
+        try:
+            b_s, c_s = np.polyfit(phi, np.log(ex), 1)
+        except Exception:
+            b_s, c_s = b0, c0
+        gr = ROOT.TGraphErrors(n, array('d', phi), array('d', p),
+                               array('d', np.zeros(n)), array('d', sigma))
+        f = ROOT.TF1("fexp_param", "[0]+exp([1]*x+[2])",
+                     float(phi.min()), float(phi.max()))
+        f.SetParameters(a_seed, b_s, c_s)
+        res = gr.Fit(f, "SQN")
+        if not (bool(res.Get()) and res.IsValid()):
+            continue
+        a, b, cc = (f.GetParameter(i) for i in range(3))
+        if not np.all(np.isfinite([a, b, cc])):
+            continue
+        c = dict(kind='exp', a=float(a), b=float(b), c=float(cc))
+        chi2 = _chi2(phi, p, sigma, c)
+        if best is None or chi2 < best[1]:
+            best = (c, chi2, 3)
+    return best
 
 
 def fit_param_vs_fluence(phi, p, perr, force=None):
@@ -205,6 +217,8 @@ def fit_param_vs_fluence(phi, p, perr, force=None):
         return dict(kind='interp', phi=phi.copy(), p=p.copy())
 
     lin, chi2_lin, k_lin = _fit_lin(phi, p, sigma)
+    if force == 'lin':
+        return lin
     if n < config.MIN_PTS_FOR_EXP and force != 'exp':
         return lin
 
@@ -214,6 +228,7 @@ def fit_param_vs_fluence(phi, p, perr, force=None):
     ce, chi2_exp, k_exp = exp
     if force == 'exp':
         return ce
+    # auto: Akaike information criterion, lower is better
     return ce if (chi2_exp + 2 * k_exp) < (chi2_lin + 2 * k_lin) else lin
 
 
@@ -430,7 +445,7 @@ def fit_global(sensors, production, setup=None, qfloor=None, mode=None):
     """
     setup = setup or config.FIT_SETUP
     qfloor = config.Q_FLOOR if qfloor is None else qfloor
-    mode = mode or 'auto'
+    mode = mode or config.LAW_MODE
     force = None if mode in (None, 'auto', 'interp') else mode   # never interp
     flus = data_io.fluences_of(sensors, production, setup)
     p2n, p3n, e2n, e3n = [], [], [], []

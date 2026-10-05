@@ -82,6 +82,7 @@ to `Q_FLOOR` at high fluence (not to 0). Built by `model.fit_global` →
 | `Q_TARGET` | target charge [fC] | `8.0` |
 | `PLATEAU_CHARGE` | target for the operating-point figure [fC] | `15.0` |
 | `Q_FLOOR` | no-gain (bulk) charge the surface asymptotes to [fC] | `0.55` |
+| `LAW_MODE` | analytic law for `p2(φ)`,`p3(φ)`: `auto` (lin/exp by AIC), `lin`, `exp` | `auto` |
 | `V_SEB` | per-production SEB bias ceiling [V] | HPK 550, FBK 600 |
 
 Change the charge error from code with `config.set_charge_error(2.0)`, or on the
