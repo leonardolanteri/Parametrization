@@ -31,6 +31,15 @@ MIN_PTS_FOR_EXP = 4
 Q_TARGET = 8.0       # fC, desired charge (e.g. end of life)
 FIT_SETUP = "Beta"   # which setup is fitted; others are shown as cross-check
 
+# SEB bias limit per production [V] (single-event-burnout ceiling). Used by the
+# charge/bias-vs-fluence plot: above this bias the device cannot be operated, so
+# the obtainable charge is Q(V_SEB, phi). Matched by exact name or by substring.
+V_SEB = {"HPK": 550.0, "HPK6": 550.0, "FBK": 600.0, "FBK-LF": 600.0}
+V_SEB_DEFAULT = 550.0
+
+# target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
+PLATEAU_CHARGE = 15.0
+
 
 def set_charge_error(value):
     """Convenience setter for the charge error, e.g. config.set_charge_error(2.0)."""
