@@ -20,11 +20,16 @@ ERR_V = 2.0          # bias error [V]
 RELERR_PHI = 0.10    # relative fluence error (10%)
 
 # --- parametrization of each p_k vs fluence ---------------------------------
+# 'interp': node-exact piecewise-linear (reproduces every measured fluence) <-- default
 # 'auto' : linear if < MIN_PTS_FOR_EXP fluence points, else best of exp/lin (AIC)
 # 'lin'  : always linear          m*phi + q
 # 'exp'  : exponential where possible    a + exp(b*phi + c)
-# 'interp': node-exact piecewise-linear (reproduces every measured fluence)
-PARAM_MODE = "auto"
+#
+# NOTE: for this dataset the per-fluence parameters do NOT follow a smooth law
+# (parameter degeneracy + mixed sensor generations), so a global lin/exp law
+# mis-predicts the charge. 'interp' reproduces every measured fluence and is the
+# recommended default; switch to 'auto'/'exp' only for a smooth extrapolation.
+PARAM_MODE = "interp"
 MIN_PTS_FOR_EXP = 4
 
 # --- analysis knobs ---------------------------------------------------------

@@ -17,6 +17,13 @@ import model
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
 _KEEP = []
+_CN = [0]
+
+
+def _cname(base):
+    """Unique canvas name (avoids ROOT 'same name' double-free at teardown)."""
+    _CN[0] += 1
+    return f"{base}_{_CN[0]}"
 
 
 def _phi_label(phi):
@@ -27,7 +34,7 @@ def plot_QV(sensors, result, show_tb=True, save=None):
     prod = result['production']
     flus = list(result['fluences'])
     n = len(flus)
-    c = ROOT.TCanvas("cQV_" + model._short(prod), "Q(V) - " + prod,
+    c = ROOT.TCanvas(_cname("cQV_" + model._short(prod)), "Q(V) - " + prod,
                      360 * max(n, 1), 430)
     c.Divide(n, 1)
     for i, phi in enumerate(flus):
@@ -65,7 +72,7 @@ def plot_params(result, save=None):
     prod = result['production']
     phi = np.asarray(result['fluences'])
     phi_err = array('d', [config.RELERR_PHI * p for p in phi])
-    c = ROOT.TCanvas("cPar_" + model._short(prod), "params - " + prod, 900, 720)
+    c = ROOT.TCanvas(_cname("cPar_" + model._short(prod)), "params - " + prod, 900, 720)
     c.Divide(2, 2)
     keep = []
     for i in range(4):
@@ -99,7 +106,7 @@ def plot_prediction(result, save=None):
     flus = list(result['fluences'])
     n = len(flus)
     coeffs = result['coeffs']
-    c = ROOT.TCanvas("cPred_" + model._short(prod), "prediction - " + prod,
+    c = ROOT.TCanvas(_cname("cPred_" + model._short(prod)), "prediction - " + prod,
                      360 * max(n, 1), 430)
     c.Divide(n, 1)
     for i, phi in enumerate(flus):
@@ -163,7 +170,7 @@ def plot_charge_bias_vs_fluence(results, target=None, vmax=None,
     if isinstance(results, dict) and 'production' in results:
         results = {results['production']: results}
 
-    c = ROOT.TCanvas("cQB_%d" % int(target), "charge & bias vs fluence", 820, 640)
+    c = ROOT.TCanvas(_cname("cQB_%d" % int(target)), "charge & bias vs fluence", 820, 640)
     c.SetLogx(True)
     c.SetLeftMargin(0.12)
     c.SetRightMargin(0.13)
@@ -231,7 +238,7 @@ def plot_bias_for_target(results, Q_target=None, save=None):
     Q_target = config.Q_TARGET if Q_target is None else Q_target
     if isinstance(results, dict) and 'production' in results:
         results = {results['production']: results}
-    c = ROOT.TCanvas(f"cBias_{int(Q_target)}", f"Bias Q={Q_target}", 800, 600)
+    c = ROOT.TCanvas(_cname(f"cBias_{int(Q_target)}"), f"Bias Q={Q_target}", 800, 600)
     ROOT.gPad.SetLeftMargin(0.13)
     palette = [ROOT.kAzure + 1, ROOT.kOrange + 7, ROOT.kGreen + 2, ROOT.kMagenta + 1]
     leg = ROOT.TLegend(0.15, 0.72, 0.5, 0.88); leg.SetBorderSize(0); leg.SetFillStyle(0)

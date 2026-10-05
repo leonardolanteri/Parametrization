@@ -15,7 +15,6 @@ Examples:
 
 import os
 import argparse
-from datetime import datetime
 
 import ROOT
 
@@ -62,8 +61,7 @@ def main():
         print(f"  {name:16s}", row)
 
     if args.save:
-        outdir = os.path.join(config.PLOTS_DIR,
-                              datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        outdir = config.PLOTS_DIR          # fixed folder: plots are overwritten
         os.makedirs(outdir, exist_ok=True)
         for name, r in results.items():
             s = model._short(name)
@@ -72,6 +70,8 @@ def main():
             plots.plot_prediction(r, save=os.path.join(outdir, f"pred_{s}.pdf"))
         plots.plot_bias_for_target(results,
                                    save=os.path.join(outdir, "bias.pdf"))
+        plots.plot_charge_bias_vs_fluence(
+            results, save=os.path.join(outdir, "charge_bias_vs_fluence.pdf"))
         print("\nplots saved in", outdir)
 
 
