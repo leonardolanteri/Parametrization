@@ -140,28 +140,46 @@ def plot_prediction(result, save=None):
 
 
 def plot_param_laws(surface, save=None):
-    """p2(phi) and p3(phi): reduced per-fluence points + the analytic law."""
+    """
+    All four parameters of Q(V)=p0+p1*V+exp(p2+p3*V) vs fluence:
+      p0 = Q_FLOOR (fixed), p1 = 0 (fixed; unconstrained by data),
+      p2(phi), p3(phi) with their analytic laws + reduced per-fluence points.
+    """
     prod = surface.production
     phi = surface.fluences
     phi_err = array('d', [config.RELERR_PHI * p for p in phi])
+    xs = np.linspace(-0.05e15, max(phi.max() * 1.15, 1e15), 250)
     c = ROOT.TCanvas(_cname("cPL_" + model._short(prod)),
-                     "parameter laws - " + prod, 900, 400)
-    c.Divide(2, 1)
+                     "parameter laws - " + prod, 900, 720)
+    c.Divide(2, 2)
     keep = []
+
+    # p0 and p1: fixed by physics (shown as flat lines)
+    fixed = [('p0', surface.qfloor, 'fixed = Q_{FLOOR}'),
+             ('p1', 0.0, 'fixed = 0 (unconstrained)')]
+    for i, (nm, val, note) in enumerate(fixed):
+        c.cd(i + 1); ROOT.gPad.SetLeftMargin(0.17); ROOT.gPad.SetBottomMargin(0.14)
+        gl = ROOT.TGraph(len(xs), array('d', xs), array('d', np.full(len(xs), val)))
+        gl.SetTitle(f"{nm}(#phi)  [{note}] - {prod};#phi [n_{{eq}}/cm^{{2}}];{nm}")
+        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2)
+        gl.GetYaxis().SetRangeUser(val - 1.0, val + 1.0)
+        gl.Draw("al")
+        keep.append(gl)
+
+    # p2 and p3: fitted analytic laws + per-fluence points
     specs = [(surface.p2_nodes, surface.p2_err, surface.law2, surface.p2, 'p2'),
              (surface.p3_nodes, surface.p3_err, surface.law3, surface.p3, 'p3')]
-    for i, (nodes, errs, law, fn, nm) in enumerate(specs):
-        c.cd(i + 1)
-        ROOT.gPad.SetLeftMargin(0.17); ROOT.gPad.SetBottomMargin(0.14)
+    for j, (nodes, errs, law, fn, nm) in enumerate(specs):
+        c.cd(j + 3); ROOT.gPad.SetLeftMargin(0.17); ROOT.gPad.SetBottomMargin(0.14)
         g = ROOT.TGraphErrors(len(phi), array('d', phi), array('d', nodes),
                               phi_err, array('d', errs))
-        kind = law['kind']
-        g.SetTitle(f"{nm}(#phi)  [{kind}] - {prod};#phi [n_{{eq}}/cm^{{2}}];{nm}")
+        g.SetTitle(f"{nm}(#phi)  [{law['kind']}] - {prod};"
+                   f"#phi [n_{{eq}}/cm^{{2}}];{nm}")
         g.SetMarkerStyle(21); g.SetMarkerSize(1.1); g.Draw("ap")
-        xs = np.linspace(-0.05e15, max(phi.max() * 1.15, 1e15), 250)
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', fn(xs)))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
         keep += [g, gl]
+
     c.Update(); _KEEP.extend(keep + [c])
     if save:
         c.SaveAs(save)

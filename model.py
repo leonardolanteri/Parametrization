@@ -418,7 +418,9 @@ class GlobalSurface:
         return f"{nm}(phi) = interp(nodes)"
 
     def law_string(self):
-        return (f"Q(V,phi) = {self.qfloor:.3g} + exp( p2(phi) + p3(phi)*V )\n"
+        return (f"Q(V,phi) = p0 + p1*V + exp( p2(phi) + p3(phi)*V )\n"
+                f"       p0(phi) = {self.qfloor:.3g}   (fixed = Q_FLOOR)\n"
+                f"       p1(phi) = 0        (fixed; unconstrained by data)\n"
                 f"       {self._law_str(self.law2, 'p2')}\n"
                 f"       {self._law_str(self.law3, 'p3')}")
 
