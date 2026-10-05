@@ -1,0 +1,5 @@
+# Python deps (ROOT is provided by the conda env, e.g. tb_analysis2)
+numpy
+scipy
+pandas
+openpyxl
