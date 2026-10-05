@@ -45,6 +45,10 @@ V_SEB_DEFAULT = 550.0
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
 PLATEAU_CHARGE = 15.0
 
+# no-gain floor [fC]: charge collected by a diode once the gain layer is gone
+# (bulk MIP charge). The global surface asymptotes to this at high fluence.
+Q_FLOOR = 0.55
+
 
 def set_charge_error(value):
     """Convenience setter for the charge error, e.g. config.set_charge_error(2.0)."""

@@ -1,0 +1,213 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{siunitx}
+
+\newcommand{\phin}{\phi}
+\newcommand{\neqcm}{\ensuremath{\mathrm{n_{eq}/cm^{2}}}}
+\newcommand{\fC}{\ensuremath{\mathrm{fC}}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{Q(V,\,$\phi$) parametrization --- method}}
+\author{ETL LGAD charge vs bias and fluence}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent
+This note describes, step by step, the laws used to parametrize the charge
+$Q$ collected by ETL LGADs as a function of the bias $V$ and the
+neutron--equivalent fluence $\phi$. It documents the code in this repository
+(\code{data\_io.py}, \code{model.py}, \code{plots.py}, \code{config.py}).
+
+\section{Data and pre-processing}
+Measurements live in \code{parametrization\_data.xlsx}, one \emph{sheet per
+production} (e.g.\ \code{HPK}; \code{FBK} later). Inside a sheet each sensor scan
+is a block of three columns $V$, $Q$, $\mathrm{Res}$; the block label carries the
+sensor name and the fluence (e.g.\ \code{HPK6 S4-B - 1e15}). The reader extracts:
+\begin{itemize}[nosep]
+  \item \textbf{production} $=$ sheet name;
+  \item \textbf{fluence} parsed from the label ($0$ if none is written);
+  \item \textbf{setup} $=$ \code{TB} if the label mentions a test beam, else \code{Beta}.
+\end{itemize}
+
+\paragraph{Pooling.} For a given production and fluence, the $(V,Q)$ points of all
+\code{Beta} sensors are \emph{pooled} into a single data set and fitted together;
+test--beam (\code{TB}) points are shown only as a cross--check and are never
+fitted. Within one production sensors of nominally equivalent generations may be
+pooled across fluence (e.g.\ HPK6 and HPK2).
+
+\paragraph{Uncertainties.} The raw data has no error bars, so constant values are
+assigned (editable in \code{config.py}):
+\begin{equation}
+  \sigma_Q = \SI{1}{\fC}\ \text{(switchable to \SI{2}{\fC})},\qquad
+  \sigma_V = \SI{2}{\volt},\qquad
+  \sigma_\phi = 0.10\,\phi .
+\end{equation}
+A constant $\sigma_Q$ does not bias the central fit values; it only sets the
+weighting and the reported parameter errors.
+
+\section{Step 1 --- charge vs bias at fixed fluence}
+At each fluence the pooled $Q(V)$ points are fitted with
+\begin{equation}
+  \boxed{\,Q(V) = p_0 + p_1\,V + \exp\!\big(p_2 + p_3\,V\big)\,}
+  \label{eq:qv}
+\end{equation}
+a linear term plus an exponential (gain--like) rise.
+
+\paragraph{Analytic seeding (no manual tuning).} ROOT's default start values make
+this fit unstable, which previously required hand--tuned parameter limits. Instead
+the seed is computed from the data (\code{auto\_seed\_QV}):
+\begin{enumerate}[nosep]
+  \item sort by $V$; fit a straight line to the lowest ${\sim}40\%$ of the points
+        to get the baseline $(p_0,p_1)$;
+  \item form the residual $R(V)=Q-(p_0+p_1V)$ and, on the points with $R>0$,
+        fit $\ln R = p_2 + p_3 V$ to get $(p_2,p_3)$.
+\end{enumerate}
+With this seed the fit converges on its own.
+
+\paragraph{Physical bounds.} The only constraints are \emph{uniform} (the same for
+every fit, not per point):
+\begin{equation}
+  p_1 \ge 0, \qquad p_3 \ge 0,
+\end{equation}
+i.e.\ the collected charge does not decrease with bias. The fit is performed in
+ROOT (\code{TGraphErrors::Fit} of Eq.~\ref{eq:qv}); if ROOT fails to return a
+valid result, a \code{scipy.optimize.curve\_fit} with the same seed is used as a
+silent fallback.
+
+The outputs are the four parameters $p_k(\phi_j)$ and their errors at each measured
+fluence $\phi_j$, with the fit $\chi^2/\mathrm{ndf}$.
+
+\section{Step 2 --- parameters vs fluence}
+Each parameter $p_k$ is then modelled as a function of $\phi$. Four laws are
+available (\code{config.PARAM\_MODE}); let $\{(\phi_j,p_{k,j},\sigma_{k,j})\}$ be
+the points from Step~1.
+
+\paragraph{(i) Node--exact interpolation \code{interp} (default).}
+Piecewise--linear through the measured points, with linear extrapolation beyond
+the end nodes:
+\begin{equation}
+  p_k(\phi) = p_{k,j} + \frac{p_{k,j+1}-p_{k,j}}{\phi_{j+1}-\phi_j}\,(\phi-\phi_j),
+  \qquad \phi\in[\phi_j,\phi_{j+1}].
+\end{equation}
+By construction it reproduces every measured fluence exactly, so the predicted
+$Q(V,\phi)$ matches the Step--1 fit at each $\phi_j$.
+
+\paragraph{(ii) Linear \code{lin}.} Weighted least squares,
+\begin{equation}
+  p_k(\phi) = m_k\,\phi + q_k, \qquad
+  \text{weights } w_j = 1/\sigma_{k,j}.
+\end{equation}
+
+\paragraph{(iii) Exponential \code{exp}.}
+\begin{equation}
+  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),
+\end{equation}
+fitted in ROOT with an analytic seed ($a_k$ near the asymptote, $(b_k,c_k)$ from a
+log fit of $p_k-a_k$).
+
+\paragraph{(iv) Automatic \code{auto}.} If there are fewer than
+\code{MIN\_PTS\_FOR\_EXP} $=4$ fluences, use \code{lin}. Otherwise fit both
+\code{lin} and \code{exp} and keep the one with the smaller Akaike information
+criterion,
+\begin{equation}
+  \mathrm{AIC} = \chi^2 + 2k,
+\end{equation}
+with $k$ the number of free parameters ($2$ for \code{lin}, $3$ for \code{exp}).
+This is decided independently for each $p_k$.
+
+\paragraph{Why \code{interp} is the default here.} The form of
+Eq.~\ref{eq:qv} is partly degenerate: $p_0,p_1,p_2$ are strongly
+anti--correlated, so while the \emph{curve} $Q(V)$ is well constrained the
+\emph{individual} parameters are not and scatter from fluence to fluence. As a
+result the measured $p_k(\phi)$ do not follow a smooth low--order law, and a global
+\code{lin}/\code{exp} fit of $p_2,p_3$ --- to which $Q$ is exponentially
+sensitive --- can mispredict the charge badly. The node--exact \code{interp}
+avoids this by reproducing the data at every measured fluence; \code{auto}/\code{exp}
+remain available when a smooth, extrapolable surface is preferred.
+
+\section{Combined surface and its inverse}
+Substituting the parameter laws into Eq.~\ref{eq:qv} gives the two--dimensional
+surface
+\begin{equation}
+  \boxed{\,Q(V,\phi) = P_0(\phi) + P_1(\phi)\,V +
+          \exp\!\big(P_2(\phi) + P_3(\phi)\,V\big)\,}
+\end{equation}
+with $P_k(\phi)$ one of the laws above. When every $P_k$ is \code{lin} or
+\code{exp} this is exported as a single closed--form ROOT \code{TF2}
+(\code{build\_QVphi\_TF2}); for \code{interp} the surface is evaluated
+numerically (\code{Q\_of\_V\_phi}).
+
+\paragraph{Bias for a target charge.} To get the bias needed to reach a charge
+$Q^\star$ at a fluence $\phi$, the equation $Q(V,\phi)=Q^\star$ is inverted
+numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is scanned on a dense $V$ grid and the
+\emph{highest} upward crossing of $Q^\star$ is returned (robust to any
+non--monotonic behaviour of a degenerate fit); \code{NaN} if $Q^\star$ is never
+reached.
+
+\section{Global surface: one smooth trend with a physical floor}
+\label{sec:global}
+The node-by-node interpolation reproduces every measured fluence but is
+piecewise (a visible change of slope at each node) and, extrapolated beyond the
+last fluence, drives the charge to zero. For the operating--point study a single
+\emph{smooth} trend over the whole range is preferable, with the correct physical
+asymptote. All pooled points of a production are therefore fitted
+\emph{simultaneously} with the three/four--parameter surface
+\begin{equation}
+  \boxed{\,Q(V,\phi) = Q_{\mathrm{floor}} +
+     \exp\!\big(a_0 + a_1\phi + (b_0 + b_1\phi)\,V\big)\,}
+  \label{eq:global}
+\end{equation}
+where $Q_{\mathrm{floor}}=\SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}) is the charge a
+diode collects once the gain layer is gone (the no--gain, bulk MIP charge). The
+coefficients $(a_0,a_1,b_0,b_1)$ are obtained with a single weighted least--squares
+fit ($\sigma_Q$). This gives one continuous law (no node kinks) that, as the gain
+term vanishes at high fluence, tends to $Q_{\mathrm{floor}}$ rather than to zero.
+The inverse $V(\phi)$ for a target charge $Q^\star>Q_{\mathrm{floor}}$ is explicit,
+\begin{equation}
+  V(\phi) = \frac{\ln\!\big(Q^\star - Q_{\mathrm{floor}}\big) - (a_0+a_1\phi)}
+                 {b_0 + b_1\phi}.
+\end{equation}
+This global surface (\code{model.GlobalSurface}, \code{model.fit\_global}) is what
+the operating--point plots below use; the per--fluence fits and the
+\code{interp}/\code{auto} laws of the previous sections remain available for
+inspecting individual fluences.
+
+\section{Operating point with the SEB limit}
+Each production has a single--event--burnout ceiling $V_{\mathrm{SEB}}$
+(\code{config.V\_SEB}; HPK \SI{550}{\volt}, FBK \SI{600}{\volt}) above which it
+cannot be operated. For a target charge $Q^\star$ (default
+$\code{PLATEAU\_CHARGE}=\SI{15}{\fC}$):
+\begin{align}
+  \text{bias needed:}\quad & V(\phi) = \min\!\big(V_{\mathrm{SEB}},\,
+      V_{\mathrm{for}\,Q^\star}(\phi)\big),\\
+  \text{charge obtainable:}\quad & Q_{\mathrm{obt}}(\phi) =
+      \min\!\big(Q^\star,\, Q(V_{\mathrm{SEB}},\phi)\big).
+\end{align}
+Below the ``SEB knee'' the target is reached within $V_{\mathrm{SEB}}$ so
+$Q_{\mathrm{obt}}=Q^\star$ (flat); beyond it the device is stuck at
+$V_{\mathrm{SEB}}$ and delivers the smaller charge $Q(V_{\mathrm{SEB}},\phi)$,
+which falls with fluence towards $Q_{\mathrm{floor}}$. Here $Q(V_{\mathrm{SEB}},\phi)$
+is taken from the global surface of Sec.~\ref{sec:global}, so the curve is a single
+smooth trend and the charge converges to $Q_{\mathrm{floor}}=\SI{0.55}{\fC}$, not to
+zero. These are the solid (charge, left axis) and dashed (bias, right axis) curves
+of the operating--point figure.
+
+\section{Caveats}
+\begin{itemize}[nosep]
+  \item Parameter degeneracy (above) makes the individual $p_k$ noisy; prefer the
+        \emph{curves}/predictions over the individual parameter values.
+  \item Extrapolation in $V$ beyond the measured range, and in $\phi$ beyond the
+        last measured fluence, is model dependent and should be treated with care.
+  \item With \code{interp} the surface is only as smooth as the data; for a smooth
+        analytic law use \code{auto}/\code{exp}, accepting that it will not pass
+        exactly through every measured fluence.
+\end{itemize}
+
+\end{document}

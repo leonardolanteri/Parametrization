@@ -153,22 +153,28 @@ def _color_for(name):
     return ROOT.kBlack
 
 
-def plot_charge_bias_vs_fluence(results, target=None, vmax=None,
+def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
                                 phi_lo=1e14, phi_hi=1e16,
                                 charge_max=22.0, bias_max=660.0, save=None):
     """
     Charge obtained and bias needed vs fluence, with the SEB cap.
 
+    `surfaces`: dict {name: GlobalSurface} (or a single GlobalSurface). The
+    global surface is one smooth trend over the whole range and asymptotes to the
+    no-gain floor (config.Q_FLOOR), so the charge decays to ~0.55 fC, not to 0.
+
     For each production, over a fluence grid:
       * dashed (right axis, Bias): V needed to reach `target` charge, capped at
         V_SEB; flat at V_SEB once the target is out of reach.
       * solid (left axis, Charge): charge actually obtainable =
-        min(target, Q(V_SEB, phi)) -- flat at `target` until the SEB knee, then
-        the charge available at V_SEB.
+        min(target, Q(V_SEB, phi)).
     """
     target = config.PLATEAU_CHARGE if target is None else target
-    if isinstance(results, dict) and 'production' in results:
-        results = {results['production']: results}
+    if hasattr(surfaces, 'production'):                          # single GlobalSurface
+        surfaces = {surfaces.production: surfaces}
+    elif isinstance(surfaces, dict) and 'coeffs' in surfaces:    # single fit result
+        surfaces = {surfaces['production']: surfaces}
+    surfaces = {k: model.as_surface(v) for k, v in surfaces.items()}
 
     c = ROOT.TCanvas(_cname("cQB_%d" % int(target)), "charge & bias vs fluence", 820, 640)
     c.SetLogx(True)
@@ -188,17 +194,16 @@ def plot_charge_bias_vs_fluence(results, target=None, vmax=None,
 
     phi = np.logspace(np.log10(phi_lo), np.log10(phi_hi), 400)
     x = phi / 1e14
-    for name, res in results.items():
-        coeffs = res['coeffs']
+    for name, surf in surfaces.items():
         Vm = _vmax_for(name, vmax)
         col = _color_for(name)
 
-        Qvm = model.Q_of_V_phi(Vm, phi, coeffs)      # charge available at V_SEB
-        Qobt = np.minimum(target, np.maximum(0.0, Qvm))
+        Qvm = surf.Q(Vm, phi)                        # charge available at V_SEB
+        Qobt = np.minimum(target, Qvm)               # surf.Q already >= Q_floor
         Vneed = np.empty_like(phi)
         for i, ph in enumerate(phi):
             if Qvm[i] >= target:
-                v = model.V_for_Q(target, ph, coeffs, v_hi=Vm)
+                v = surf.V_for_Q(target, ph, v_hi=Vm)
                 Vneed[i] = Vm if v != v else v
             else:
                 Vneed[i] = Vm
@@ -234,18 +239,22 @@ def plot_charge_bias_vs_fluence(results, target=None, vmax=None,
     return c
 
 
-def plot_bias_for_target(results, Q_target=None, save=None):
+def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
     Q_target = config.Q_TARGET if Q_target is None else Q_target
-    if isinstance(results, dict) and 'production' in results:
-        results = {results['production']: results}
+    if hasattr(surfaces, 'production'):
+        surfaces = {surfaces.production: surfaces}
+    elif isinstance(surfaces, dict) and 'coeffs' in surfaces:
+        surfaces = {surfaces['production']: surfaces}
+    surfaces = {k: model.as_surface(v) for k, v in surfaces.items()}
     c = ROOT.TCanvas(_cname(f"cBias_{int(Q_target)}"), f"Bias Q={Q_target}", 800, 600)
     ROOT.gPad.SetLeftMargin(0.13)
     palette = [ROOT.kAzure + 1, ROOT.kOrange + 7, ROOT.kGreen + 2, ROOT.kMagenta + 1]
     leg = ROOT.TLegend(0.15, 0.72, 0.5, 0.88); leg.SetBorderSize(0); leg.SetFillStyle(0)
     first = True
-    for k, (name, res) in enumerate(results.items()):
-        phi = np.linspace(0, float(res['fluences'].max()), 80)
-        V = np.array([model.V_for_Q(Q_target, ph, res['coeffs']) for ph in phi])
+    for k, (name, surf) in enumerate(surfaces.items()):
+        hi = phi_hi if phi_hi else float(surf.fluences.max())
+        phi = np.linspace(0, hi, 120)
+        V = np.array([surf.V_for_Q(Q_target, ph) for ph in phi])
         g = ROOT.TGraph(len(phi), array('d', phi), array('d', np.nan_to_num(V)))
         g.SetLineColor(palette[k % len(palette)]); g.SetLineWidth(3)
         g.SetTitle(f"Bias to reach Q = {Q_target:.0f} fC;"

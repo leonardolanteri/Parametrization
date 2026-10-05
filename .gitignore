@@ -8,10 +8,19 @@ __pycache__/
 Plots/
 *.pdf
 *.png
+parameters_*.csv
+
+# LaTeX aux
+*.aux
+*.log
+*.out
+*.toc
 
 # os / editor
 .DS_Store
 .vscode/
 
-# keep the data file tracked (it is the source of truth):
+# keep tracked (sources of truth / deliverables):
 !parametrization_data.xlsx
+!docs/method.pdf
+!docs/method.tex

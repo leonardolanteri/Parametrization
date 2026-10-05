@@ -52,11 +52,14 @@ def main():
     sheets = [args.production] if args.production else data_io.productions(sensors)
     results = {prod: model.fit_production(sensors, prod) for prod in sheets}
 
-    print(f"\nBias to reach Q = {config.Q_TARGET:.0f} fC:")
-    for name, r in results.items():
+    # global smooth surfaces (one trend over the whole range, floor at Q_FLOOR)
+    surfaces = {name: model.fit_global(sensors, name) for name in sheets}
+
+    print(f"\nBias to reach Q = {config.Q_TARGET:.0f} fC (global surface):")
+    for name, surf in surfaces.items():
         row = {}
-        for phi in r['fluences']:
-            v = model.V_for_Q(config.Q_TARGET, phi, r['coeffs'])
+        for phi in surf.fluences:
+            v = surf.V_for_Q(config.Q_TARGET, phi)
             row['%.1e' % phi] = 'n/a' if v != v else '%.0f V' % v
         print(f"  {name:16s}", row)
 
@@ -68,10 +71,10 @@ def main():
             plots.plot_QV(sensors, r, save=os.path.join(outdir, f"QV_{s}.pdf"))
             plots.plot_params(r, save=os.path.join(outdir, f"par_{s}.pdf"))
             plots.plot_prediction(r, save=os.path.join(outdir, f"pred_{s}.pdf"))
-        plots.plot_bias_for_target(results,
+        plots.plot_bias_for_target(surfaces,
                                    save=os.path.join(outdir, "bias.pdf"))
         plots.plot_charge_bias_vs_fluence(
-            results, save=os.path.join(outdir, "charge_bias_vs_fluence.pdf"))
+            surfaces, save=os.path.join(outdir, "charge_bias_vs_fluence.pdf"))
         print("\nplots saved in", outdir)
 
 

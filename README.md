@@ -53,6 +53,19 @@ converges without per-point tuning. Only uniform physical bounds are applied
 
 Combined: `Q(V,φ) = P0(φ) + P1(φ)·V + exp( P2(φ) + P3(φ)·V )`.
 
+**Global surface (operating-point plots).** For a single smooth trend over the
+whole fluence range — with the correct physical asymptote — all pooled points are
+fitted at once with
+
+```
+Q(V,φ) = Q_FLOOR + exp( a0 + a1·φ + (b0 + b1·φ)·V )
+```
+
+where `Q_FLOOR = 0.55 fC` is the no-gain (bulk) charge. This has no node-to-node
+kink and the charge converges to `Q_FLOOR` at high fluence (not to 0). It is used
+by the charge/bias-vs-fluence and fixed-charge plots
+(`model.fit_global` / `model.GlobalSurface`).
+
 ## Settings (`config.py`)
 
 | setting | meaning | default |
@@ -62,6 +75,9 @@ Combined: `Q(V,φ) = P0(φ) + P1(φ)·V + exp( P2(φ) + P3(φ)·V )`.
 | `RELERR_PHI` | relative fluence error | `0.10` |
 | `PARAM_MODE` | vs-φ law | `auto` |
 | `Q_TARGET` | target charge [fC] | `8.0` |
+| `PLATEAU_CHARGE` | target for the operating-point figure [fC] | `15.0` |
+| `Q_FLOOR` | no-gain (bulk) charge the surface asymptotes to [fC] | `0.55` |
+| `V_SEB` | per-production SEB bias ceiling [V] | HPK 550, FBK 600 |
 
 Change the charge error from code with `config.set_charge_error(2.0)`, or on the
 command line with `python run.py --errq 2`.

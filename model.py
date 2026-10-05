@@ -319,6 +319,151 @@ def build_QVphi_TF2(law, name, phi_max=1.6e15, V_max=650.0):
 # ===========================================================================
 # helpers
 # ===========================================================================
+# ===========================================================================
+# GLOBAL surface: one smooth trend over the whole fluence range, with a
+# physical no-gain floor. Fits all pooled (V, Q) points simultaneously with
+#     Q(V, phi) = Q_floor + exp( a0 + a1*phi + (b0 + b1*phi)*V )
+# -> single continuous law (no node-to-node kinks) that asymptotes to Q_floor
+#    (the no-gain diode charge) at high fluence.
+# ===========================================================================
+class GlobalSurface:
+    def __init__(self, production, popt, qfloor, fluences):
+        self.production = production
+        self.popt = tuple(float(x) for x in popt)      # a0, a1, b0, b1
+        self.qfloor = float(qfloor)
+        self.fluences = np.asarray(fluences, dtype=float)
+
+    def Q(self, V, phi):
+        a0, a1, b0, b1 = self.popt
+        V = np.asarray(V, dtype=float)
+        arg = np.clip(a0 + a1 * phi + (b0 + b1 * phi) * V, -700.0, 700.0)
+        return self.qfloor + np.exp(arg)
+
+    def V_for_Q(self, Q_target, phi, v_lo=0.0, v_hi=1200.0, n_scan=1200):
+        """Lowest bias reaching Q_target at phi (the surface is monotonic in V)."""
+        if Q_target <= self.qfloor:
+            return v_lo
+        a0, a1, b0, b1 = self.popt
+        b = b0 + b1 * phi
+        if b <= 0:
+            return np.nan
+        arg = np.log(Q_target - self.qfloor) - (a0 + a1 * phi)
+        V = arg / b
+        return float(V) if v_lo <= V <= v_hi else (np.nan if V > v_hi else v_lo)
+
+    def law_string(self):
+        a0, a1, b0, b1 = self.popt
+        return ("Q(V,phi) = %.3g + exp[ (%.4e %+.4e*phi) + (%.4e %+.4e*phi)*V ]"
+                % (self.qfloor, a0, a1, b0, b1))
+
+
+def fit_global(sensors, production, setup=None, qfloor=None):
+    """Fit the global smooth surface (with floor) to all pooled points."""
+    if not HAVE_SCIPY:
+        raise RuntimeError("fit_global needs scipy")
+    from scipy.optimize import curve_fit
+    setup = setup or config.FIT_SETUP
+    qfloor = config.Q_FLOOR if qfloor is None else qfloor
+    flus = data_io.fluences_of(sensors, production, setup)
+    V, Q, PH = [], [], []
+    for phi in flus:
+        v, q = data_io.pooled(sensors, production, phi, setup)
+        V += list(v); Q += list(q); PH += [phi] * len(v)
+    V, Q, PH = np.array(V), np.array(Q), np.array(PH)
+
+    def surf(X, a0, a1, b0, b1):
+        v, ph = X
+        return qfloor + np.exp(a0 + a1 * ph + (b0 + b1 * ph) * v)
+
+    sig = np.full(len(Q), config.ERR_Q)
+    best = None
+    for seed in ([-2.0, -1e-15, 0.035, -1.5e-17],
+                 [0.0, -5e-15, 0.02, 0.0],
+                 [1.0, -1e-14, 0.015, 1e-18]):
+        try:
+            popt, _ = curve_fit(surf, (V, PH), Q, p0=seed, sigma=sig,
+                                absolute_sigma=True, maxfev=200000)
+            rms = float(np.sqrt(np.mean((Q - surf((V, PH), *popt)) ** 2)))
+            if best is None or rms < best[1]:
+                best = (popt, rms)
+        except Exception:
+            continue
+    if best is None:
+        raise RuntimeError(f"global fit failed for {production}")
+    return GlobalSurface(production, best[0], qfloor, flus)
+
+
+def fit_all_global(sensors=None, setup=None, qfloor=None):
+    sensors = sensors if sensors is not None else data_io.load_sensors()
+    return {prod: fit_global(sensors, prod, setup, qfloor)
+            for prod in data_io.productions(sensors)}
+
+
+class _CoeffSurface:
+    """Adapter so a per-fluence fit result exposes the GlobalSurface interface."""
+    def __init__(self, result):
+        self.production = result['production']
+        self.coeffs = result['coeffs']
+        self.fluences = np.asarray(result['fluences'], dtype=float)
+
+    def Q(self, V, phi):
+        return Q_of_V_phi(V, phi, self.coeffs)
+
+    def V_for_Q(self, Q_target, phi, v_lo=0.0, v_hi=1200.0, n_scan=1200):
+        return V_for_Q(Q_target, phi, self.coeffs, v_lo, v_hi, n_scan)
+
+
+def as_surface(obj):
+    """Return obj if it already is a surface, else wrap a fit-result dict."""
+    if hasattr(obj, 'Q') and hasattr(obj, 'V_for_Q'):
+        return obj
+    return _CoeffSurface(obj)
+
+
+def law_summary(result):
+    """List of human-readable strings describing each p_k(phi) law."""
+    out = []
+    for i, name in enumerate(PARAM_NAMES):
+        c = result['coeffs'][i]
+        if c['kind'] == 'lin':
+            out.append(f"{name}(phi) = {c['m']:+.4e}*phi {c['q']:+.4e}")
+        elif c['kind'] == 'exp':
+            out.append(f"{name}(phi) = {c['a']:+.4e} + exp({c['b']:+.4e}*phi "
+                       f"{c['c']:+.4e})")
+        else:
+            nodes = ", ".join("%.4g @ %.2e" % (v, x)
+                              for x, v in zip(c['phi'], c['p']))
+            out.append(f"{name}(phi) = interp[{nodes}]")
+    return out
+
+
+def param_table(result):
+    """
+    pandas DataFrame with the per-fluence Q(V) fit parameters of one production:
+    fluence, n points, p0..p3 (+ errors), chi2/ndf, fit backend.
+    """
+    import pandas as pd
+    rows = []
+    for phi in result['fluences']:
+        f = result['perpoint'][phi]
+        p, e = f['params'], f['errors']
+        rows.append({
+            'production': result['production'],
+            'fluence': phi, 'n': f['n'],
+            'p0': p[0], 'p0_err': e[0], 'p1': p[1], 'p1_err': e[1],
+            'p2': p[2], 'p2_err': e[2], 'p3': p[3], 'p3_err': e[3],
+            'chi2': f['chi2'], 'ndf': f['ndf'], 'backend': f['backend'],
+        })
+    return pd.DataFrame(rows)
+
+
+def params_all(results):
+    """Concatenated parameter table for several productions."""
+    import pandas as pd
+    return pd.concat([param_table(r) for r in results.values()],
+                     ignore_index=True)
+
+
 def _short(production):
     return (str(production).replace(' ', '').replace('-', '')
             .replace('PreSeries', 'PreSer'))
