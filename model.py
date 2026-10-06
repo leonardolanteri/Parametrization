@@ -369,55 +369,74 @@ def fit_QV_reduced(V, Q, name="qvr"):
 #   NOT follow any smooth trend) and then fitting those, we fit ONE closed-form
 #   surface to ALL (V, phi, Q) points at once:
 #
-#       Q(V,phi) = p0 + p1(phi)*V + exp( p2(phi) + p3(phi)*V )
+#       Q(V,phi) = p0(phi) + p1(phi)*V + exp( p2(phi) + p3(phi)*V )
 #
-#   with an exponential law for each fluence-dependent parameter
-#       p_k(phi) = a_k + exp( b_k * phi + c_k )        (k = 1,2,3)
-#   and p0 a free global constant (NOT imposed): it comes out ~0.3-0.5 fC, the
-#   no-gain / bulk charge the surface decays to at high fluence. The smoothness of
-#   the laws breaks the per-fluence degeneracy, so there is no high-fluence
-#   outlier and the charge converges on its own (no clamp / no imposed floor).
+#   with an exponential law for each parameter
+#       p_k(phi) = a_k + exp( b_k * phi + c_k )        (k = 0,1,2,3)
+#   The smoothness of the laws breaks the per-fluence degeneracy, so there is no
+#   high-fluence outlier and the charge converges on its own (no clamp / no
+#   imposed floor): p0 is left free and comes out ~0.3-0.5 fC, the no-gain / bulk
+#   charge the surface decays to at high fluence.
+#
+#   config.P0_VS_PHI selects whether p0 has its own fluence law (True) or is a
+#   single free global constant (False). The bulk charge is not expected to depend
+#   on fluence, so a constant p0 is the physically sober default; giving it a law
+#   does not improve the fit here and leaves its asymptote poorly constrained.
 # ===========================================================================
 PHI_SCALE = 1e15        # fluence scale used inside the simultaneous fit (numerics)
 
 
-def _simul_charge(VPHI, p0, a1, b1, c1, a2, b2, c2, a3, b3, c3):
-    """Q(V,phi) = p0 + p1(phi)*V + exp(p2(phi)+p3(phi)*V), laws p_k=a+exp(b*s+c)."""
+def _p_law(a, b, c, s):
+    return a + np.exp(np.clip(b * s + c, -50.0, 50.0))
+
+
+def _simul_charge_p0law(VPHI, a0, b0, c0, a1, b1, c1, a2, b2, c2, a3, b3, c3):
+    """p0,p1,p2,p3 all exponential laws of phi (12 parameters)."""
     V, PHI = VPHI
     s = np.asarray(PHI, dtype=float) / PHI_SCALE
     V = np.asarray(V, dtype=float)
-    p1 = a1 + np.exp(np.clip(b1 * s + c1, -50.0, 50.0))
-    p2 = a2 + np.exp(np.clip(b2 * s + c2, -50.0, 50.0))
-    p3 = a3 + np.exp(np.clip(b3 * s + c3, -50.0, 50.0))
+    p0 = _p_law(a0, b0, c0, s); p1 = _p_law(a1, b1, c1, s)
+    p2 = _p_law(a2, b2, c2, s); p3 = _p_law(a3, b3, c3, s)
+    return p0 + p1 * V + np.exp(np.clip(p2 + p3 * V, -50.0, 50.0))
+
+
+def _simul_charge_p0const(VPHI, p0, a1, b1, c1, a2, b2, c2, a3, b3, c3):
+    """p0 a free global constant; p1,p2,p3 exponential laws (10 parameters)."""
+    V, PHI = VPHI
+    s = np.asarray(PHI, dtype=float) / PHI_SCALE
+    V = np.asarray(V, dtype=float)
+    p1 = _p_law(a1, b1, c1, s); p2 = _p_law(a2, b2, c2, s); p3 = _p_law(a3, b3, c3, s)
     return p0 + p1 * V + np.exp(np.clip(p2 + p3 * V, -50.0, 50.0))
 
 
 class SimulSurface:
     """
-    Charge surface  Q(V,phi) = p0 + p1(phi)*V + exp(p2(phi)+p3(phi)*V)  from one
-    global simultaneous fit. p0 is a free global constant (the bulk charge the
-    surface decays to at high fluence); there is no imposed floor / clamp.
-    `coeffs` = {0: p0 (const), 1: p1 law, 2: p2 law, 3: p3 law} in the standard
-    eval_param format, so the whole existing machinery (Q_of_V_phi, V_for_Q,
-    build_QVphi_TF2) applies unchanged.
+    Charge surface  Q(V,phi) = p0(phi) + p1(phi)*V + exp(p2(phi)+p3(phi)*V)  from
+    one global simultaneous fit. There is no imposed floor / clamp: p0 is free and
+    comes out at the bulk charge the surface decays to at high fluence.
+    `coeffs` = {k: law_k} in the standard eval_param format (p0 is a constant 'lin'
+    law when config.P0_VS_PHI is False, else an 'exp' law), so the existing
+    machinery (Q_of_V_phi, V_for_Q, build_QVphi_TF2) applies unchanged.
     """
-    def __init__(self, production, coeffs, fluences, p1_err=None, p2_err=None,
-                 p3_err=None, chi2=None, ndf=None, rms=None, p0_err=None):
+    def __init__(self, production, coeffs, fluences, errs=None,
+                 chi2=None, ndf=None, rms=None):
         self.production = production
         self.coeffs = coeffs
-        self.law1, self.law2, self.law3 = coeffs[1], coeffs[2], coeffs[3]
-        self.p0 = float(coeffs[0]['q'])
-        self.p0_err = p0_err
+        self.law0, self.law1 = coeffs[0], coeffs[1]
+        self.law2, self.law3 = coeffs[2], coeffs[3]
+        self.p0_const = (coeffs[0]['kind'] == 'lin')
         self.fluences = np.asarray(fluences, dtype=float)
         self.chi2, self.ndf, self.rms = chi2, ndf, rms
-        # parameter values at the measured fluences (they lie on the laws) + band
-        self.p1_nodes = np.atleast_1d(self.p1(self.fluences))
-        self.p2_nodes = np.atleast_1d(self.p2(self.fluences))
-        self.p3_nodes = np.atleast_1d(self.p3(self.fluences))
+        errs = errs or {}
         z = np.zeros_like(self.fluences)
-        self.p1_err = z if p1_err is None else np.asarray(p1_err, dtype=float)
-        self.p2_err = z if p2_err is None else np.asarray(p2_err, dtype=float)
-        self.p3_err = z if p3_err is None else np.asarray(p3_err, dtype=float)
+        for k in range(4):
+            setattr(self, f"p{k}_nodes",
+                    np.atleast_1d(eval_param(coeffs[k], self.fluences)))
+            e = errs.get(k)
+            setattr(self, f"p{k}_err", z if e is None else np.asarray(e, dtype=float))
+
+    def p0(self, phi):
+        return eval_param(self.law0, phi)
 
     def p1(self, phi):
         return eval_param(self.law1, phi)
@@ -444,16 +463,14 @@ class SimulSurface:
     @staticmethod
     def _law_str(law, nm):
         if law['kind'] == 'lin':
-            return f"{nm}(phi) = {law['m']:+.4e}*phi {law['q']:+.4e}"
+            return f"{nm}       = {law['q']:+.4e} fC  (free global constant)"
         return (f"{nm}(phi) = {law['a']:+.4e} + exp({law['b']:+.4e}*phi "
                 f"{law['c']:+.4e})")
 
     def law_string(self):
-        head = "Q(V,phi) = p0 + p1(phi)*V + exp( p2(phi) + p3(phi)*V )"
-        body = (f"       p0       = {self.p0:+.4e} fC  (free, no floor imposed)\n"
-                f"       {self._law_str(self.law1, 'p1')}\n"
-                f"       {self._law_str(self.law2, 'p2')}\n"
-                f"       {self._law_str(self.law3, 'p3')}")
+        head = "Q(V,phi) = p0(phi) + p1(phi)*V + exp( p2(phi) + p3(phi)*V )"
+        body = "\n".join("       " + self._law_str(self.coeffs[k], f"p{k}")
+                         for k in range(4))
         tail = ""
         if self.chi2 is not None and self.ndf:
             tail = f"\n       chi2/ndf = {self.chi2:.1f}/{self.ndf}   RMS = {self.rms:.2f} fC"
@@ -465,34 +482,31 @@ class SimulSurface:
         return build_QVphi_TF2(self.coeffs, name, phi_max=phi_max, V_max=V_max)
 
 
-def _node_errors(popt, pcov, phi):
-    """Propagate the fit covariance to sigma[p_k(phi)] for k = 1,2,3 at each phi."""
+def _exp_node_err(a, b, c, cov, phi):
+    """sigma[a+exp(b*s+c)] at each phi from the 3x3 covariance (s = phi/PHI_SCALE)."""
     s = np.asarray(phi, dtype=float) / PHI_SCALE
-    out = []
-    for idx in (1, 4, 7):                       # start of (a,b,c) for p1,p2,p3
-        a, b, c = popt[idx:idx + 3]
-        cov = pcov[idx:idx + 3, idx:idx + 3]
-        E = np.exp(np.clip(b * s + c, -50.0, 50.0))
-        errs = []
-        for si, Ei in zip(s, E):
-            J = np.array([1.0, si * Ei, Ei])    # d p_k / d(a,b,c)
-            var = float(J @ cov @ J)
-            errs.append(np.sqrt(var) if np.isfinite(var) and var > 0 else 0.0)
-        out.append(np.array(errs))
-    return out                                  # [p1_err, p2_err, p3_err]
+    E = np.exp(np.clip(b * s + c, -50.0, 50.0))
+    errs = []
+    for si, Ei in zip(s, E):
+        J = np.array([1.0, si * Ei, Ei])        # d p / d(a,b,c)
+        var = float(J @ cov @ J)
+        errs.append(np.sqrt(var) if np.isfinite(var) and var > 0 else 0.0)
+    return np.array(errs)
 
 
-def fit_global(sensors, production, setup=None, verbose=True, **_):
+def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **_):
     """
     One global simultaneous fit of the whole surface for a production:
-        Q(V,phi) = p0 + p1(phi)*V + exp( p2(phi) + p3(phi)*V )
-    p0 free (no imposed floor); p1,p2,p3 each an exponential law of phi. Extra
-    keyword arguments (qfloor, mode) are accepted and ignored for back-compat.
-    Returns a SimulSurface.
+        Q(V,phi) = p0(phi) + p1(phi)*V + exp( p2(phi) + p3(phi)*V )
+    with an exponential law for each parameter. p0 has its own fluence law when
+    p0_vs_phi (default config.P0_VS_PHI) is True, else it is a single free global
+    constant. No floor is imposed. Extra kwargs (qfloor, mode) are accepted and
+    ignored for back-compat. Returns a SimulSurface.
     """
     if not HAVE_SCIPY:
         raise RuntimeError("the global simultaneous fit needs scipy "
                            "(conda env tb_analysis2 has it).")
+    p0law = config.P0_VS_PHI if p0_vs_phi is None else p0_vs_phi
     setup = setup or config.FIT_SETUP
     flus = data_io.fluences_of(sensors, production, setup)
 
@@ -504,41 +518,59 @@ def fit_global(sensors, production, setup=None, verbose=True, **_):
     V = np.concatenate(Vs); PHI = np.concatenate(Phis); Q = np.concatenate(Qs)
     sigma = np.full_like(Q, config.ERR_Q)
 
-    #        p0   a1  b1  c1    a2  b2  c2    a3   b3  c3
-    seed = [0.4, 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
-    lo = [0.0, 0.0, -80., -80., -80., -80., -80., 0.0, -80., -80.]
-    hi = [5.0, 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
-    popt, pcov = _curve_fit(_simul_charge, (V, PHI), Q, p0=seed, sigma=sigma,
-                            absolute_sigma=True, maxfev=400000, bounds=(lo, hi))
+    # bounds per (a,b,c) triplet: a0,a1,a3 >= 0 (p0,p1,p3 >= 0); a2 free
+    tri = lambda a_lo: ([a_lo, -80., -80.], [None, 80., 80.])    # noqa: E731
+    if p0law:
+        model = _simul_charge_p0law
+        #       p0            p1           p2            p3
+        seed = [0.3, -5., -2., 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
+        lo = [0., -80., -80., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [5., 80., 80., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
+        starts = {0: 0, 1: 3, 2: 6, 3: 9}       # start index of each triplet
+    else:
+        model = _simul_charge_p0const
+        #       p0    p1           p2            p3
+        seed = [0.4, 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
+        lo = [0., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [5., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
+        starts = {1: 1, 2: 4, 3: 7}             # p0 is the scalar at index 0
+
+    popt, pcov = _curve_fit(model, (V, PHI), Q, p0=seed, sigma=sigma,
+                            absolute_sigma=True, maxfev=600000, bounds=(lo, hi))
 
     def _law(a, b, c):                          # a + exp(b*(phi/S)+c) -> standard form
         return dict(kind='exp', a=float(a), b=float(b) / PHI_SCALE, c=float(c))
-    coeffs = {
-        0: dict(kind='lin', m=0.0, q=float(popt[0])),
-        1: _law(*popt[1:4]), 2: _law(*popt[4:7]), 3: _law(*popt[7:10]),
-    }
-    pred = _simul_charge((V, PHI), *popt)
+    coeffs, errs = {}, {}
+    if not p0law:
+        coeffs[0] = dict(kind='lin', m=0.0, q=float(popt[0]))
+        e00 = np.sqrt(pcov[0, 0]) if np.isfinite(pcov[0, 0]) else 0.0
+        errs[0] = np.full(len(flus), float(e00))
+    for k, idx in starts.items():
+        a, b, c = popt[idx:idx + 3]
+        coeffs[k] = _law(a, b, c)
+        try:
+            errs[k] = _exp_node_err(a, b, c, pcov[idx:idx + 3, idx:idx + 3], flus)
+        except Exception:
+            errs[k] = None
+
+    pred = model((V, PHI), *popt)
     chi2 = float(np.sum(((pred - Q) / config.ERR_Q) ** 2))
     ndf = max(len(Q) - len(popt), 1)
     rms = float(np.sqrt(np.mean((pred - Q) ** 2)))
-    try:
-        p1e, p2e, p3e = _node_errors(popt, pcov, flus)
-        p0e = float(np.sqrt(pcov[0, 0])) if np.isfinite(pcov[0, 0]) else None
-    except Exception:
-        p1e = p2e = p3e = None; p0e = None
 
     if verbose:
-        print(f"\n=== {production} ({setup}) global simultaneous fit ===")
+        print(f"\n=== {production} ({setup}) global simultaneous fit "
+              f"[p0 {'law' if p0law else 'const'}] ===")
         print(f"  n = {len(Q)} points over {len(flus)} fluences   "
               f"chi2/ndf = {chi2:.1f}/{ndf}   RMS = {rms:.2f} fC")
 
-    return SimulSurface(production, coeffs, flus, p1_err=p1e, p2_err=p2e,
-                        p3_err=p3e, chi2=chi2, ndf=ndf, rms=rms, p0_err=p0e)
+    return SimulSurface(production, coeffs, flus, errs=errs,
+                        chi2=chi2, ndf=ndf, rms=rms)
 
 
-def fit_all_global(sensors=None, setup=None, verbose=True, **_):
+def fit_all_global(sensors=None, setup=None, verbose=True, p0_vs_phi=None, **_):
     sensors = sensors if sensors is not None else data_io.load_sensors()
-    return {prod: fit_global(sensors, prod, setup, verbose)
+    return {prod: fit_global(sensors, prod, setup, verbose, p0_vs_phi)
             for prod in data_io.productions(sensors)}
 
 

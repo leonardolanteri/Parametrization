@@ -170,13 +170,17 @@ which each voltage parameter is replaced by its law of fluence,
   \label{eq:global}
 \end{equation}
 \begin{equation}
-  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),\qquad k=1,2,3,
+  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),\qquad k=0,1,2,3,
   \label{eq:laws}
 \end{equation}
-with $p_0$ a \emph{free global constant}. There are ten parameters
-($p_0$ and three triplets $a_k,b_k,c_k$), fitted together with
-\code{scipy.optimize.curve\_fit} under the physical bounds $a_1,a_3\ge0$ (so
-$p_1,p_3\ge0$: the charge never decreases with bias). Because the fluence
+fitted together with \code{scipy.optimize.curve\_fit} under the physical bounds
+$a_0,a_1,a_3\ge0$ (so $p_0,p_1,p_3\ge0$: the charge is positive and never
+decreases with bias). The switch \code{config.P0\_VS\_PHI} selects whether $p_0$
+carries its own fluence law (Eq.~\ref{eq:laws} with $k=0$; twelve parameters) or
+is a single \emph{free global constant} (ten parameters). The bulk charge is not
+expected to depend on fluence, so a constant $p_0$ is the physically sober choice;
+giving it a law does not improve the fit here and leaves its high--fluence
+asymptote poorly constrained. Because the fluence
 dependence is forced through the smooth laws of Eq.~\ref{eq:laws}, the
 degeneracy at each fluence is resolved by the neighbouring fluences --- among the
 near--equivalent per--fluence parameter combinations the fit selects the one that

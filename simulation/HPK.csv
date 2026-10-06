@@ -1,0 +1,22 @@
+# Simulation curve (HPK6) read by eye from the reference plot. Overlaid (deep
+# blue) on the charge/bias-vs-fluence figure for comparison with the data-driven
+# prediction (azure). Columns: fluence [1e14 n_eq/cm^2], charge [fC], bias [V].
+# Values are approximate (visual read-off), especially around the SEB knee.
+phi14,charge,bias
+1,15.0,215
+2,15.0,250
+3,15.0,285
+4,15.0,320
+5,15.0,360
+6,15.0,400
+7,15.0,455
+8,15.0,510
+9,14.0,550
+10,7.0,550
+11,3.5,550
+12,2.5,550
+15,1.4,550
+20,0.9,550
+30,0.7,550
+50,0.65,550
+100,0.65,550

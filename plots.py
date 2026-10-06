@@ -141,10 +141,11 @@ def plot_prediction(result, save=None):
 
 def plot_param_laws(surface, save=None):
     """
-    The three fluence-dependent parameters of the global surface
-    Q(V,phi)=p0+p1(phi)*V+exp(p2(phi)+p3(phi)*V): p1(phi), p2(phi), p3(phi), each
-    with its exponential law and the propagated uncertainty at the measured
-    fluences (markers lie on the law by construction -- it is one global fit).
+    The four parameters of the global surface
+    Q(V,phi)=p0(phi)+p1(phi)*V+exp(p2(phi)+p3(phi)*V): p0,p1,p2,p3 vs fluence, each
+    with its law (exponential, or a flat line when p0 is a constant) and the
+    uncertainty band propagated from the global fit. Markers lie on the law by
+    construction -- it is one simultaneous fit.
     """
     prod = surface.production
     phi = surface.fluences
@@ -154,39 +155,27 @@ def plot_param_laws(surface, save=None):
                      "parameter laws - " + prod, 900, 720)
     c.Divide(2, 2)
     keep = []
-
-    # --- p0: a free global constant (no phi dependence): flat line +/- band ---
-    c.cd(1); ROOT.gPad.SetLeftMargin(0.19); ROOT.gPad.SetBottomMargin(0.14)
-    p0 = surface.p0
-    p0e = surface.p0_err if surface.p0_err else 0.0
-    span = max(3.0 * p0e, 0.25 * abs(p0), 0.2)
-    fr = ROOT.gPad.DrawFrame(xs[0], p0 - span, xs[-1], p0 + span)
-    fr.SetTitle(f"p0  [const] - {prod};#phi [n_{{eq}}/cm^{{2}}];p0 [fC]")
-    g0 = ROOT.TGraph(len(xs), array('d', xs), array('d', np.full(len(xs), p0)))
-    g0.SetLineColor(ROOT.kAzure + 1); g0.SetLineWidth(2); g0.Draw("l same")
-    for sgn in (+1, -1):
-        gb = ROOT.TGraph(len(xs), array('d', xs),
-                         array('d', np.full(len(xs), p0 + sgn * p0e)))
-        gb.SetLineColor(ROOT.kAzure + 1); gb.SetLineStyle(2); gb.Draw("l same")
-        keep.append(gb)
-    tx = ROOT.TLatex(); tx.SetNDC(True); tx.SetTextSize(0.05)
-    tx.DrawLatex(0.40, 0.80, "p0 = %.3f #pm %.3f fC" % (p0, p0e))
-    keep += [fr, g0, tx]
-
-    # --- p1, p2, p3: exponential laws of fluence + propagated band ---
-    specs = [(surface.p1_nodes, surface.p1_err, surface.law1, surface.p1, 'p1'),
+    specs = [(surface.p0_nodes, surface.p0_err, surface.law0, surface.p0, 'p0'),
+             (surface.p1_nodes, surface.p1_err, surface.law1, surface.p1, 'p1'),
              (surface.p2_nodes, surface.p2_err, surface.law2, surface.p2, 'p2'),
              (surface.p3_nodes, surface.p3_err, surface.law3, surface.p3, 'p3')]
     for j, (nodes, errs, law, fn, nm) in enumerate(specs):
-        c.cd(j + 2); ROOT.gPad.SetLeftMargin(0.19); ROOT.gPad.SetBottomMargin(0.14)
-        g = ROOT.TGraphErrors(len(phi), array('d', phi),
-                              array('d', np.asarray(nodes, dtype=float)),
-                              phi_err, array('d', np.asarray(errs, dtype=float)))
-        g.SetTitle(f"{nm}(#phi)  [{law['kind']}] - {prod};"
-                   f"#phi [n_{{eq}}/cm^{{2}}];{nm}")
-        g.SetMarkerStyle(21); g.SetMarkerSize(1.1); g.Draw("ap")
-        gl = ROOT.TGraph(len(xs), array('d', xs),
-                         array('d', np.asarray(fn(xs), dtype=float)))
+        c.cd(j + 1); ROOT.gPad.SetLeftMargin(0.19); ROOT.gPad.SetBottomMargin(0.14)
+        nodes = np.asarray(nodes, dtype=float); errs = np.asarray(errs, dtype=float)
+        kind = 'const' if law['kind'] == 'lin' else law['kind']
+        g = ROOT.TGraphErrors(len(phi), array('d', phi), array('d', nodes),
+                              phi_err, array('d', errs))
+        unit = ' [fC]' if nm == 'p0' else ''
+        g.SetTitle(f"{nm}(#phi)  [{kind}] - {prod};"
+                   f"#phi [n_{{eq}}/cm^{{2}}];{nm}{unit}")
+        g.SetMarkerStyle(21); g.SetMarkerSize(1.1)
+        ys = np.asarray(fn(xs), dtype=float)
+        lo = min(float(nodes.min()), float(ys.min()))
+        hi = max(float(nodes.max()), float(ys.max()))
+        pad = 0.15 * (hi - lo) + (0.1 if hi == lo else 0.0)
+        g.GetYaxis().SetRangeUser(lo - pad, hi + pad)
+        g.Draw("ap")
+        gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
         keep += [g, gl]
     c.Update(); _KEEP.extend(keep + [c])
@@ -255,9 +244,32 @@ def _color_for(name):
     return ROOT.kBlack
 
 
+def _sim_color_for(name):
+    """Deep-blue / deep-red for the simulation overlay (vs the azure/red data)."""
+    u = name.upper()
+    if 'FBK' in u:
+        return ROOT.TColor.GetColor("#8b0000")
+    return ROOT.TColor.GetColor("#15339e")        # deep blue (HPK)
+
+
+def _load_sim(name):
+    """Read simulation/<production>.csv -> (phi[n_eq], charge[fC], bias[V]) or None."""
+    import os
+    path = os.path.join(config.SIM_DIR, "%s.csv" % model._short(name))
+    if not os.path.exists(path):
+        path = os.path.join(config.SIM_DIR, "%s.csv" % name)
+    if not os.path.exists(path):
+        return None
+    import pandas as pd
+    df = pd.read_csv(path, comment="#")
+    return (df["phi14"].to_numpy() * 1e14,
+            df["charge"].to_numpy(), df["bias"].to_numpy())
+
+
 def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
                                 phi_lo=1e14, phi_hi=1e16,
-                                charge_max=22.0, bias_max=660.0, save=None):
+                                charge_max=22.0, bias_max=660.0,
+                                overlay="auto", save=None):
     """
     Charge obtained and bias needed vs fluence, with the SEB cap.
 
@@ -326,6 +338,26 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         leg.AddEntry(g_q, "%s  Charge (solid)" % name, "l")
         leg.AddEntry(g_v, "%s  Bias (dashed)" % name, "l")
         _KEEP.extend([g_q, g_v, ln, txt])
+
+        # --- optional simulation overlay (deep blue), read from simulation/*.csv
+        sim = _load_sim(name) if overlay == "auto" else (
+            overlay.get(name) if isinstance(overlay, dict) else None)
+        if sim is not None:
+            sphi, schg, sbias = sim
+            sx = np.asarray(sphi, dtype=float) / 1e14
+            scol = _sim_color_for(name)
+            sg_q = ROOT.TGraph(len(sx), array('d', sx), array('d', np.asarray(schg, float)))
+            sg_q.SetLineColor(scol); sg_q.SetLineWidth(3)
+            sg_q.SetMarkerColor(scol); sg_q.SetMarkerStyle(20); sg_q.SetMarkerSize(0.7)
+            sg_q.Draw("lp same")
+            sg_v = ROOT.TGraph(len(sx), array('d', sx),
+                               array('d', np.asarray(sbias, float) * scale))
+            sg_v.SetLineColor(scol); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
+            sg_v.SetMarkerColor(scol); sg_v.SetMarkerStyle(24); sg_v.SetMarkerSize(0.7)
+            sg_v.Draw("lp same")
+            leg.AddEntry(sg_q, "%s  sim. Charge" % name, "lp")
+            leg.AddEntry(sg_v, "%s  sim. Bias" % name, "lp")
+            _KEEP.extend([sg_q, sg_v])
 
     raxis = ROOT.TGaxis(phi_hi / 1e14, 0.0, phi_hi / 1e14, charge_max,
                         0.0, bias_max, 510, "+L")

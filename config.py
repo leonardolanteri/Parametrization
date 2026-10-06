@@ -12,6 +12,9 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(HERE, "parametrization_data.xlsx")
 PLOTS_DIR = os.path.join(HERE, "Plots")
+# optional per-production simulation curves to overlay on the charge/bias figure
+# (simulation/<production>.csv with columns phi14, charge, bias)
+SIM_DIR = os.path.join(HERE, "simulation")
 
 # --- experimental uncertainties (the raw data has no error bars) ------------
 # Charge error [fC]: default 1.0, but meant to be switchable (e.g. 2.0).
@@ -33,11 +36,16 @@ PARAM_MODE = "interp"
 MIN_PTS_FOR_EXP = 4
 
 # NOTE on the main model (model.fit_global): it is a single GLOBAL SIMULTANEOUS
-# fit of  Q(V,phi) = p0 + p1(phi)*V + exp(p2(phi)+p3(phi)*V)  to all (V,phi,Q)
-# points at once, with an exponential law for each p1,p2,p3 and p0 a free global
-# constant. It does not use PARAM_MODE / LAW_MODE (those drive the older
-# per-fluence diagnostic path only).
+# fit of  Q(V,phi) = p0(phi) + p1(phi)*V + exp(p2(phi)+p3(phi)*V)  to all (V,phi,Q)
+# points at once, with an exponential law for each parameter. It does not use
+# PARAM_MODE / LAW_MODE (those drive the older per-fluence diagnostic path only).
 LAW_MODE = "auto"
+
+# Give p0 its own fluence law p0(phi)=a+exp(b*phi+c) (True) or keep it a single
+# free global constant (False). The bulk charge should not depend on fluence, so
+# False is the physically sober choice; True does not improve the fit here and
+# leaves p0's high-fluence asymptote poorly constrained.
+P0_VS_PHI = True
 
 # --- analysis knobs ---------------------------------------------------------
 Q_TARGET = 8.0       # fC, desired charge (e.g. end of life)
