@@ -27,7 +27,7 @@ neutron--equivalent fluence $\phi$. It documents the code in this repository
 
 \section{Data and pre-processing}
 Measurements live in \code{parametrization\_data.xlsx}, one \emph{sheet per
-production} (e.g.\ \code{HPK}; \code{FBK} later). Inside a sheet each sensor scan
+production} (e.g.\ \code{HPK}, \code{FBK-LF}). Inside a sheet each sensor scan
 is a block of three columns $V$, $Q$, $\mathrm{Res}$; the block label carries the
 sensor name and the fluence (e.g.\ \code{HPK6 S4-B - 1e15}). The reader extracts:
 \begin{itemize}[nosep]
@@ -165,7 +165,7 @@ The cure is to impose the smoothness \emph{during} the fit: a single
 \emph{global simultaneous} least squares to all $(V,\phi,Q)$ points at once, in
 which each voltage parameter is replaced by its law of fluence,
 \begin{equation}
-  \boxed{\,Q(V,\phi) = p_0 + p_1(\phi)\,V +
+  \boxed{\,Q(V,\phi) = p_0(\phi) + p_1(\phi)\,V +
           \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
   \label{eq:global}
 \end{equation}
@@ -173,43 +173,54 @@ which each voltage parameter is replaced by its law of fluence,
   p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),\qquad k=0,1,2,3,
   \label{eq:laws}
 \end{equation}
-fitted together with \code{scipy.optimize.curve\_fit} under the physical bounds
-$a_0,a_1,a_3\ge0$ (so $p_0,p_1,p_3\ge0$: the charge is positive and never
-decreases with bias). The switch \code{config.P0\_VS\_PHI} selects whether $p_0$
-carries its own fluence law (Eq.~\ref{eq:laws} with $k=0$; twelve parameters) or
-is a single \emph{free global constant} (ten parameters). The bulk charge is not
-expected to depend on fluence, so a constant $p_0$ is the physically sober choice;
-giving it a law does not improve the fit here and leaves its high--fluence
-asymptote poorly constrained. Because the fluence
-dependence is forced through the smooth laws of Eq.~\ref{eq:laws}, the
-degeneracy at each fluence is resolved by the neighbouring fluences --- among the
-near--equivalent per--fluence parameter combinations the fit selects the one that
-lies on a smooth $\exp$/linear trend. The high--fluence outlier disappears and,
-for HPK, the fit reaches $\chi^2/\mathrm{ndf}\approx26/50$ and a prediction RMS of
-$\SI{0.66}{\fC}$.
+fitted together with \code{scipy.optimize.curve\_fit}. Because the fluence
+dependence is forced through the smooth laws of Eq.~\ref{eq:laws}, the degeneracy
+at each fluence is resolved by the neighbouring fluences --- among the
+near--equivalent per--fluence parameter combinations the fit selects the one lying
+on a smooth trend. The high--fluence $p_2$ outlier disappears and, for HPK, the fit
+reaches $\chi^2/\mathrm{ndf}\approx 28/48$ and a prediction RMS of $\SI{0.66}{\fC}$
+on the real points. By default $p_0$ carries its own law (Eq.~\ref{eq:laws},
+$k=0$); \code{config.P0\_VS\_PHI} can instead make it a single global constant.
+Each parameter law is printed with its fitted numbers on the parameter--law figure.
 
-\paragraph{The bulk charge emerges, it is not imposed.} $p_0$ is left free and
-comes out $\approx\SI{0.3}{\fC}$ for HPK --- compatible, within the experimental
-charge uncertainty, with the expected no--gain (bulk MIP) charge of
-$\sim\SI{0.5}{\fC}$ (\code{config.Q\_FLOOR}, kept only as a reference value).
-Thus the charge decays \emph{on its own} towards the bulk value at high fluence
-(the gain term $\exp(p_2+p_3V)\to0$ as $\phi$ grows): no floor and no clamp are
-applied. Both $p_0$ and the linear term $p_1(\phi)V$ are kept --- the data show
-$p_1$ matters more than $p_0$ (dropping $p_1$ worsens the fit, dropping $p_0$ does
-not), and $p_1(\phi)\to0$ at high fluence so it does not spoil the convergence.
+\paragraph{Physical constraints (no per--point tuning).} Only uniform constraints
+are applied:
+\begin{equation}
+  a_1,a_3\ge 0 \ \ (p_1,p_3\ge0:\ \text{charge rises with bias}),\qquad
+  p_0(\phi)\in[\,0,\,1\,]\ \fC\ \ (\code{config.P0\_BOUNDS}).
+\end{equation}
+The last line bounds the \emph{high--fluence asymptote}: once the gain is gone the
+collected charge is the bulk (no--gain MIP) charge, a small number between $0$ and
+$\sim\SI{1}{\fC}$. $p_0$ is seeded at the per--production bulk value
+$Q_\infty$ (\code{config.Q\_INF}: HPK $\SI{0.50}{\fC}$, FBK $\SI{0.55}{\fC}$).
 
-\paragraph{Uncertainties and inverse.} The covariance of the ten parameters is
-propagated to a band on each $p_k(\phi)$ (shown on the parameter--law figure). The
-bias for a target charge $Q^\star$ is obtained by inverting Eq.~\ref{eq:global}
-numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is monotonic in $V$ (since
-$p_1,p_3\ge0$), so the single upward crossing of $Q^\star$ is returned, or
-\code{NaN} if it is never reached. This model is \code{model.SimulSurface} /
-\code{model.fit\_global}; the four--parameter per--fluence fits of
-Sec.~\ref{sec:step1} remain as diagnostics.
+\paragraph{High--fluence convergence.} At very high fluence the gain layer is fully
+removed, so for \emph{every} production $Q\to Q_\infty$, flat in $V$. For HPK (five
+fluences, with low--charge points at $\phi=\SI{1.5e15}{}$) this happens on its own.
+For a sparsely--measured production it cannot: FBK is measured only up to
+$\SI{1.5e15}{\neqcm}$, where $Q$ is still $2$--$\SI{10}{\fC}$ (the gain is far from
+gone), so the \emph{rate} at which the gain dies beyond the data is simply not
+measured, and the bare extrapolation plateaus well above $Q_\infty$. Parameter
+bounds alone cannot fix this without either leaving the plateau or distorting the
+in--data fit. We therefore add a \emph{soft physical prior} on the known asymptote
+(\code{config.ANCHOR\_FLOOR}): a few points $Q=Q_\infty$ (flat in $V$) at high
+fluences \code{ANCHOR\_PHIS}, weighted by \code{ANCHOR\_ERR}. It is a prior on the
+asymptote, not a hard clamp: it acts only far beyond the data, the reported
+$\chi^2/\mathrm{RMS}$ use the \emph{real} points only, and the in--data fit is
+unchanged (HPK/FBK RMS $0.66/\SI{0.64}{\fC}$). The surface then decays smoothly to
+$Q_\infty$ ($\approx0.5$--$\SI{0.6}{\fC}$), matching the simulation.
+
+\paragraph{Uncertainties and inverse.} The parameter covariance is propagated to a
+band on each $p_k(\phi)$ (shown on the parameter--law figure). The bias for a target
+charge $Q^\star$ is obtained by inverting Eq.~\ref{eq:global} numerically
+(\code{V\_for\_Q}): $Q(V,\phi)$ is monotonic in $V$ (since $p_1,p_3\ge0$), so the
+single crossing of $Q^\star$ is returned, or \code{NaN} if it is never reached.
+This model is \code{model.SimulSurface} / \code{model.fit\_global}; the
+per--fluence fits of Sec.~\ref{sec:step1} remain as diagnostics.
 
 \section{Operating point with the SEB limit}
 Each production has a single--event--burnout ceiling $V_{\mathrm{SEB}}$
-(\code{config.V\_SEB}; HPK \SI{550}{\volt}, FBK \SI{600}{\volt}) above which it
+(\code{config.V\_SEB}; HPK \SI{550}{\volt}, FBK \SI{605}{\volt}) above which it
 cannot be operated. For a target charge $Q^\star$ (default
 $\code{PLATEAU\_CHARGE}=\SI{15}{\fC}$):
 \begin{align}
@@ -220,23 +231,29 @@ $\code{PLATEAU\_CHARGE}=\SI{15}{\fC}$):
 \end{align}
 Below the ``SEB knee'' the target is reached within $V_{\mathrm{SEB}}$ so
 $Q_{\mathrm{obt}}=Q^\star$ (flat); beyond it the device is stuck at
-$V_{\mathrm{SEB}}$ and delivers the smaller charge $Q(V_{\mathrm{SEB}},\phi)$,
-which falls with fluence towards the bulk charge $p_0$. Here $Q(V_{\mathrm{SEB}},\phi)$
-is taken from the global surface of Sec.~\ref{sec:global}, so the curve is a single
-smooth trend and the charge converges to $p_0\approx\SI{0.3}{\fC}$ on its own (the
-expected bulk value $\sim\SI{0.5}{\fC}$ within uncertainty), not to zero. These are
-the solid (charge, left axis) and dashed (bias, right axis) curves of the
-operating--point figure.
+$V_{\mathrm{SEB}}$ and delivers $Q(V_{\mathrm{SEB}},\phi)$, which falls with fluence
+towards $Q_\infty$. These are the solid (charge, left axis) and dashed (bias, right
+axis) curves of the operating--point figure, drawn once per production.
+
+\section{Comparison with the simulation}
+For a cross--check the operating--point figure can overlay a simulation curve read
+from \code{simulation/<production>.csv} (columns fluence, charge, bias). The
+data--driven parametrization (azure for HPK, red for FBK) and the simulation
+(green for HPK, gold for FBK) are drawn on the same axes: the solid lines are the
+obtainable charge, the dashed lines the bias needed, both capped at $V_{\mathrm{SEB}}$.
+The two agree on the SEB knee position and on the high--fluence plateau.
 
 \section{Caveats}
 \begin{itemize}[nosep]
-  \item Parameter degeneracy (above) makes the individual $p_k$ noisy; prefer the
-        \emph{curves}/predictions over the individual parameter values.
+  \item The high--fluence asymptote of a sparsely--measured production (e.g.\ FBK,
+        three fluences) is \emph{not} determined by its data: it is set by the bulk
+        prior $Q_\infty$ and the bound $p_0\in[0,1]$. The curve there is a
+        constrained extrapolation, not a measurement --- adding fluence points above
+        $\SI{1.5e15}{}$ would replace the prior with data.
   \item Extrapolation in $V$ beyond the measured range, and in $\phi$ beyond the
         last measured fluence, is model dependent and should be treated with care.
-  \item With \code{interp} the surface is only as smooth as the data; for a smooth
-        analytic law use \code{auto}/\code{exp}, accepting that it will not pass
-        exactly through every measured fluence.
+  \item The per--fluence parameters are partly degenerate; prefer the
+        \emph{curves}/predictions over the individual Step--1 parameter values.
 \end{itemize}
 
 \end{document}
