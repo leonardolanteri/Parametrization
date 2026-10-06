@@ -150,7 +150,8 @@ def plot_param_laws(surface, save=None):
     prod = surface.production
     phi = surface.fluences
     phi_err = array('d', [config.RELERR_PHI * p for p in phi])
-    xs = np.linspace(-0.05e15, max(phi.max() * 1.15, 1e15), 250)
+    # grid from 0 (physical fluences only): the exp laws blow up at phi < 0
+    xs = np.linspace(0.0, max(phi.max() * 1.15, 1e15), 250)
     c = ROOT.TCanvas(_cname("cPL_" + model._short(prod)),
                      "parameter laws - " + prod, 900, 720)
     c.Divide(2, 2)
@@ -170,11 +171,13 @@ def plot_param_laws(surface, save=None):
                    f"#phi [n_{{eq}}/cm^{{2}}];{nm}{unit}")
         g.SetMarkerStyle(21); g.SetMarkerSize(1.1)
         ys = np.asarray(fn(xs), dtype=float)
-        lo = min(float(nodes.min()), float(ys.min()))
-        hi = max(float(nodes.max()), float(ys.max()))
-        pad = 0.15 * (hi - lo) + (0.1 if hi == lo else 0.0)
-        g.GetYaxis().SetRangeUser(lo - pad, hi + pad)
+        # y-range adapts to the points (+/- band) and the law over the grid
+        lo = min(float((nodes - errs).min()), float(ys.min()))
+        hi = max(float((nodes + errs).max()), float(ys.max()))
+        pad = 0.12 * (hi - lo) + (0.1 if hi == lo else 0.0)
         g.Draw("ap")
+        g.GetXaxis().SetLimits(xs[0], xs[-1])
+        g.GetYaxis().SetRangeUser(lo - pad, hi + pad)
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
         keep += [g, gl]

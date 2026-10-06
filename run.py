@@ -67,21 +67,25 @@ def main():
     if args.save:
         outdir = config.PLOTS_DIR          # fixed folder: plots are overwritten
         os.makedirs(outdir, exist_ok=True)
+        # one separate analysis per sheet/production: every file is <kind>_<name>
         for name, r in results.items():
             s = model._short(name)
+            surf = surfaces[name]
             plots.plot_QV(sensors, r, save=os.path.join(outdir, f"QV_{s}.pdf"))
-            plots.plot_param_laws(surfaces[name],
+            plots.plot_param_laws(surf,
                                   save=os.path.join(outdir, f"param_laws_{s}.pdf"))
-            plots.plot_surface_vs_data(sensors, surfaces[name],
+            plots.plot_surface_vs_data(sensors, surf,
                                        save=os.path.join(outdir, f"surface_vs_data_{s}.pdf"))
-        plots.plot_bias_for_target(surfaces,
-                                   save=os.path.join(outdir, "bias.pdf"))
-        plots.plot_charge_bias_vs_fluence(
-            surfaces, save=os.path.join(outdir, "charge_bias_vs_fluence.pdf"))
-        # extra version with the simulation curves overlaid (simulation/<prod>.csv)
-        plots.plot_charge_bias_vs_fluence(
-            surfaces, overlay="auto",
-            save=os.path.join(outdir, "charge_bias_vs_fluence_sim.pdf"))
+            plots.plot_bias_for_target({name: surf},
+                                       save=os.path.join(outdir, f"bias_{s}.pdf"))
+            plots.plot_charge_bias_vs_fluence(
+                {name: surf},
+                save=os.path.join(outdir, f"charge_bias_vs_fluence_{s}.pdf"))
+            # extra overlay version only if a simulation curve exists for this sheet
+            if plots._load_sim(name) is not None:
+                plots.plot_charge_bias_vs_fluence(
+                    {name: surf}, overlay="auto",
+                    save=os.path.join(outdir, f"charge_bias_vs_fluence_{s}_sim.pdf"))
         print("\nplots saved in", outdir)
 
 
