@@ -44,6 +44,14 @@ def _phi_label(phi):
     return "new (#phi=0)" if phi == 0 else "#phi = %.1e n_{eq}/cm^{2}" % phi
 
 
+def _law_eq_str(coeff, nm):
+    """Compact 'p_k(phi) = ...' string with the fitted numbers, for a plot label."""
+    if coeff['kind'] == 'lin':                       # constant p0
+        return "%s = %.3f fC" % (nm, coeff['q'])
+    return "%s(#phi) = %.3g + exp(%.2e #phi %+.2f)" % (
+        nm, coeff['a'], coeff['b'], coeff['c'])
+
+
 def _panel_layout(n):
     """(ncol, nrow) for n per-fluence panels: up to 3 columns, wraps to more rows."""
     ncol = min(max(n, 1), 3)
@@ -218,7 +226,11 @@ def plot_param_laws(surface, save=None):
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(1); gl.Draw("l same")
         _pad_header(f"{prod}  {nm}(#phi) [{kind}]", cms=(j == 0))
-        keep += [g, gl]
+        eq = ROOT.TLatex(); eq.SetNDC(True); eq.SetTextFont(42)
+        eq.SetTextSize(0.040); eq.SetTextColor(ROOT.kAzure + 2); eq.SetTextAlign(33)
+        eq.DrawLatex(1.0 - ROOT.gPad.GetRightMargin() - 0.02, 0.87,
+                     _law_eq_str(law, nm))
+        keep += [g, gl, eq]
     c.Update(); _KEEP.extend(keep + [c])
     if save:
         c.SaveAs(save)
