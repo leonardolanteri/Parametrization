@@ -60,11 +60,20 @@ V_SEB_DEFAULT = 550.0
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
 PLATEAU_CHARGE = 15.0
 
-# expected no-gain (bulk) charge [fC]: charge a diode collects once the gain
-# layer is gone. It is NOT imposed on the fit -- the global model's free p0 comes
-# out ~0.3-0.5 fC on its own (compatible with this within the experimental
-# uncertainty). Kept here only as the physical reference value.
-Q_FLOOR = 0.5
+# no-gain (bulk) charge [fC]: the charge a diode collects once the gain layer is
+# gone. Same for every production. The surface must decay to this at high fluence.
+Q_FLOOR = 0.55
+
+# Anchor the fit to the bulk charge at high fluence. With few/low fluence points
+# the gain term is unconstrained far beyond the data and the extrapolated charge
+# can plateau well above Q_FLOOR (e.g. FBK, measured only up to 1.5e15). When True,
+# the global fit adds soft synthetic points Q = Q_FLOOR (flat in V) at ANCHOR_PHIS,
+# weighted like the data (ERR_Q), so the surface decays to the bulk on its own.
+# This is a physical prior (known asymptote), not a hard clamp; the real-data fit
+# quality is essentially unchanged. Set False to fit the data alone.
+ANCHOR_FLOOR = True
+ANCHOR_PHIS = [2.5e15, 4.0e15, 7.0e15, 1.2e16]   # fluences of the bulk anchor
+ANCHOR_ERR = 0.5                 # [fC] weight of the anchor (smaller = stronger pull)
 
 
 def set_charge_error(value):

@@ -293,10 +293,13 @@ def _color_for(name):
     return ROOT.kBlack
 
 
-def _sim_colors():
-    """(charge, bias) colors for the simulation overlay -- green & amber, chosen to
-    stand out from the azure/red data-driven curves."""
-    return ROOT.kGreen + 2, ROOT.TColor.GetColor("#e0a000")   # green, amber/yellow
+def _sim_color_for(name):
+    """One recognisable colour per production for the simulation overlay (both its
+    charge and bias curves), standing out from the azure/red data-driven curves:
+    green for HPK, yellow/gold for FBK."""
+    if 'FBK' in name.upper():
+        return ROOT.TColor.GetColor("#e0b000")    # gold / yellow (FBK)
+    return ROOT.kGreen + 2                         # green (HPK)
 
 
 def _load_sim(name):
@@ -373,7 +376,7 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         g_q = ROOT.TGraph(len(x), array('d', x), array('d', Qobt))
         g_q.SetLineColor(col); g_q.SetLineWidth(2); g_q.Draw("l same")
         g_v = ROOT.TGraph(len(x), array('d', x), array('d', Vneed * scale))
-        g_v.SetLineColor(col); g_v.SetLineWidth(1); g_v.SetLineStyle(2)
+        g_v.SetLineColor(col); g_v.SetLineWidth(2); g_v.SetLineStyle(2)
         g_v.Draw("l same")
 
         ln = ROOT.TLine(x[0], Vm * scale, x[-1], Vm * scale)
@@ -392,13 +395,13 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         if sim is not None:
             sphi, schg, sbias = sim
             sx = np.asarray(sphi, dtype=float) / 1e14
-            scol_q, scol_v = _sim_colors()
+            scol = _sim_color_for(name)
             sg_q = ROOT.TGraph(len(sx), array('d', sx), array('d', np.asarray(schg, float)))
-            sg_q.SetLineColor(scol_q); sg_q.SetLineWidth(2)
+            sg_q.SetLineColor(scol); sg_q.SetLineWidth(2)
             sg_q.Draw("l same")
             sg_v = ROOT.TGraph(len(sx), array('d', sx),
                                array('d', np.asarray(sbias, float) * scale))
-            sg_v.SetLineColor(scol_v); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
+            sg_v.SetLineColor(scol); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
             sg_v.Draw("l same")
             leg.AddEntry(sg_q, "%s  sim. Charge (solid)" % name, "l")
             leg.AddEntry(sg_v, "%s  sim. Bias (dashed)" % name, "l")

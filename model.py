@@ -516,10 +516,23 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
         v = np.asarray(v, dtype=float); q = np.asarray(q, dtype=float)
         Vs.append(v); Phis.append(np.full_like(v, float(ph))); Qs.append(q)
     V = np.concatenate(Vs); PHI = np.concatenate(Phis); Q = np.concatenate(Qs)
-    sigma = np.full_like(Q, config.ERR_Q)
+    n_real = len(Q)
 
-    # bounds per (a,b,c) triplet: a0,a1,a3 >= 0 (p0,p1,p3 >= 0); a2 free
-    tri = lambda a_lo: ([a_lo, -80., -80.], [None, 80., 80.])    # noqa: E731
+    # bulk anchor: soft synthetic points Q = Q_FLOOR (flat in V) at high fluence,
+    # so the gain-dominated extrapolation decays to the known bulk charge. These
+    # are a physical prior, not data: the reported chi2/RMS use the real points.
+    if config.ANCHOR_FLOOR and config.ANCHOR_PHIS:
+        vmax = float(config.V_SEB.get(production, config.V_SEB_DEFAULT))
+        vgrid = np.linspace(float(V.min()), vmax, 6)
+        aV, aPHI, aQ = [], [], []
+        for pha in config.ANCHOR_PHIS:
+            aV.extend(vgrid); aPHI.extend([float(pha)] * len(vgrid))
+            aQ.extend([config.Q_FLOOR] * len(vgrid))
+        V = np.concatenate([V, aV]); PHI = np.concatenate([PHI, aPHI])
+        Q = np.concatenate([Q, aQ])
+    sigma = np.full_like(Q, config.ERR_Q)
+    sigma[n_real:] = config.ANCHOR_ERR          # anchor points get their own weight
+
     if p0law:
         model = _simul_charge_p0law
         #       p0            p1           p2            p3
@@ -553,15 +566,19 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
         except Exception:
             errs[k] = None
 
-    pred = model((V, PHI), *popt)
-    chi2 = float(np.sum(((pred - Q) / config.ERR_Q) ** 2))
-    ndf = max(len(Q) - len(popt), 1)
-    rms = float(np.sqrt(np.mean((pred - Q) ** 2)))
+    # fit quality on the REAL data points only (exclude the bulk anchor points)
+    pred = model((V[:n_real], PHI[:n_real]), *popt)
+    Qr = Q[:n_real]
+    chi2 = float(np.sum(((pred - Qr) / config.ERR_Q) ** 2))
+    ndf = max(n_real - len(popt), 1)
+    rms = float(np.sqrt(np.mean((pred - Qr) ** 2)))
 
     if verbose:
+        anc = "" if not (config.ANCHOR_FLOOR and config.ANCHOR_PHIS) else \
+            f" + bulk anchor @ {', '.join('%.0e' % p for p in config.ANCHOR_PHIS)}"
         print(f"\n=== {production} ({setup}) global simultaneous fit "
-              f"[p0 {'law' if p0law else 'const'}] ===")
-        print(f"  n = {len(Q)} points over {len(flus)} fluences   "
+              f"[p0 {'law' if p0law else 'const'}{anc}] ===")
+        print(f"  n = {n_real} points over {len(flus)} fluences   "
               f"chi2/ndf = {chi2:.1f}/{ndf}   RMS = {rms:.2f} fC")
 
     return SimulSurface(production, coeffs, flus, errs=errs,
