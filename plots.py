@@ -41,24 +41,49 @@ def _phi_label(phi):
     return "new (#phi=0)" if phi == 0 else "#phi = %.1e n_{eq}/cm^{2}" % phi
 
 
+def _panel_layout(n):
+    """(ncol, nrow) for n per-fluence panels: up to 3 columns, wraps to more rows."""
+    ncol = min(max(n, 1), 3)
+    nrow = int(np.ceil(n / ncol)) if n else 1
+    return ncol, nrow
+
+
+def _cms(canvas=None):
+    """Draw 'CMS ETL Preliminary' top-left. For a multi-pad figure pass the canvas
+    (labels the first panel's top-left corner); else it labels the current pad."""
+    t = ROOT.TLatex(); t.SetNDC(True); t.SetTextFont(42)
+    if canvas is not None:
+        canvas.cd(1)
+        t.SetTextSize(0.050)
+        t.DrawLatex(ROOT.gPad.GetLeftMargin(), 0.912,
+                    "#bf{CMS} #it{ETL Preliminary}")
+    else:
+        t.SetTextSize(0.038)
+        t.DrawLatex(ROOT.gPad.GetLeftMargin() + 0.01, 0.945,
+                    "#bf{CMS} #it{ETL Preliminary}")
+    _KEEP.append(t)
+
+
 def plot_QV(sensors, result, show_tb=True, save=None):
     prod = result['production']
     flus = list(result['fluences'])
     n = len(flus)
+    ncol, nrow = _panel_layout(n)
     c = ROOT.TCanvas(_cname("cQV_" + model._short(prod)), "Q(V) - " + prod,
-                     360 * max(n, 1), 430)
-    c.Divide(n, 1)
+                     460 * ncol, 400 * nrow)
+    c.Divide(ncol, nrow)
     for i, phi in enumerate(flus):
         c.cd(i + 1)
         ROOT.gPad.SetLeftMargin(0.15)
         ROOT.gPad.SetBottomMargin(0.13)
         fit = result['perpoint'][phi]
         gr = fit['graph']
+        gr.GetListOfFunctions().Clear()      # drop the red auto-drawn fit curve
         gr.SetTitle(f"{prod} - {_phi_label(phi)};V [V];Q [fC]")
-        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.8)
+        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.6)
         gr.SetMarkerColor(ROOT.kBlack); gr.SetLineColor(ROOT.kBlack)
         gr.Draw("ap")
-        f = fit['tf1']; f.SetLineColor(ROOT.kAzure + 1); f.SetLineWidth(2)
+        f = fit['tf1']; f.SetLineColor(ROOT.kAzure + 1); f.SetLineWidth(1)
         f.Draw("same")
         leg = ROOT.TLegend(0.17, 0.72, 0.55, 0.88)
         leg.SetBorderSize(0); leg.SetFillStyle(0)
@@ -68,11 +93,12 @@ def plot_QV(sensors, result, show_tb=True, save=None):
             Vtb, Qtb = data_io.pooled(sensors, prod, phi, setup='TB')
             if len(Vtb):
                 gtb = ROOT.TGraph(len(Vtb), array('d', Vtb), array('d', Qtb))
-                gtb.SetMarkerStyle(24); gtb.SetMarkerSize(0.8)
+                gtb.SetMarkerStyle(24); gtb.SetMarkerSize(0.6)
                 gtb.SetMarkerColor(ROOT.kRed + 1); gtb.Draw("p same")
                 leg.AddEntry(gtb, "test beam (check)", "p")
                 _KEEP.append(gtb)
         leg.Draw(); _KEEP.append(leg)
+    _cms(c)
     c.Update(); _KEEP.append(c)
     if save:
         c.SaveAs(save)
@@ -169,7 +195,7 @@ def plot_param_laws(surface, save=None):
         unit = ' [fC]' if nm == 'p0' else ''
         g.SetTitle(f"{nm}(#phi)  [{kind}] - {prod};"
                    f"#phi [n_{{eq}}/cm^{{2}}];{nm}{unit}")
-        g.SetMarkerStyle(21); g.SetMarkerSize(1.1)
+        g.SetMarkerStyle(21); g.SetMarkerSize(0.9); g.SetLineWidth(1)
         ys = np.asarray(fn(xs), dtype=float)
         # y-range adapts to the points (+/- band) and the law over the grid
         lo = min(float((nodes - errs).min()), float(ys.min()))
@@ -179,8 +205,9 @@ def plot_param_laws(surface, save=None):
         g.GetXaxis().SetLimits(xs[0], xs[-1])
         g.GetYaxis().SetRangeUser(lo - pad, hi + pad)
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
-        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
+        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(1); gl.Draw("l same")
         keep += [g, gl]
+    _cms(c)
     c.Update(); _KEEP.extend(keep + [c])
     if save:
         c.SaveAs(save)
@@ -189,17 +216,18 @@ def plot_param_laws(surface, save=None):
 
 def plot_surface_vs_data(sensors, surface, setup=None, save=None):
     """
-    Overlay the single analytic global surface Q(V,phi) on the pooled data at
-    each measured fluence (one pad per fluence). Shows how well one analytic law
-    describes every fluence.
+    Overlay the global surface prediction Q(V,phi) on the pooled data at each
+    measured fluence (one pad per fluence). The prediction is a dashed green line.
+    Saved as param_pred_<production> by run.py.
     """
     setup = setup or config.FIT_SETUP
     prod = surface.production
     flus = list(surface.fluences)
     n = len(flus)
-    c = ROOT.TCanvas(_cname("cSurfData_" + model._short(prod)),
-                     "surface vs data - " + prod, 360 * max(n, 1), 430)
-    c.Divide(n, 1)
+    ncol, nrow = _panel_layout(n)
+    c = ROOT.TCanvas(_cname("cParPred_" + model._short(prod)),
+                     "param. prediction vs data - " + prod, 460 * ncol, 400 * nrow)
+    c.Divide(ncol, nrow)
     for i, phi in enumerate(flus):
         c.cd(i + 1)
         ROOT.gPad.SetLeftMargin(0.15)
@@ -209,13 +237,20 @@ def plot_surface_vs_data(sensors, surface, setup=None, save=None):
         Qerr = array('d', np.full(len(Q), config.ERR_Q))
         gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q), Verr, Qerr)
         gr.SetTitle(f"{prod} - {_phi_label(phi)};V [V];Q [fC]")
-        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.8); gr.Draw("ap")
+        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.6); gr.Draw("ap")
         vmin, vmax_ = float(V.min()), float(V.max())
         xs = np.linspace(vmin, vmax_, 200)
-        ys = surface.Q(xs, phi)               # full global surface vs data
+        ys = surface.Q(xs, phi)               # full global surface prediction
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
-        gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
-        _KEEP.extend([gr, gl])
+        gl.SetLineColor(ROOT.kGreen + 2); gl.SetLineWidth(1); gl.SetLineStyle(2)
+        gl.Draw("l same")
+        leg = ROOT.TLegend(0.17, 0.78, 0.55, 0.88)
+        leg.SetBorderSize(0); leg.SetFillStyle(0)
+        leg.AddEntry(gr, "%s (pooled)" % setup, "pe")
+        leg.AddEntry(gl, "param. prediction", "l")
+        leg.Draw()
+        _KEEP.extend([gr, gl, leg])
+    _cms(c)
     c.Update(); _KEEP.append(c)
     if save:
         c.SaveAs(save)
@@ -327,9 +362,9 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
                 Vneed[i] = Vm
 
         g_q = ROOT.TGraph(len(x), array('d', x), array('d', Qobt))
-        g_q.SetLineColor(col); g_q.SetLineWidth(3); g_q.Draw("l same")
+        g_q.SetLineColor(col); g_q.SetLineWidth(2); g_q.Draw("l same")
         g_v = ROOT.TGraph(len(x), array('d', x), array('d', Vneed * scale))
-        g_v.SetLineColor(col); g_v.SetLineWidth(2); g_v.SetLineStyle(2)
+        g_v.SetLineColor(col); g_v.SetLineWidth(1); g_v.SetLineStyle(2)
         g_v.Draw("l same")
 
         ln = ROOT.TLine(x[0], Vm * scale, x[-1], Vm * scale)
@@ -350,11 +385,11 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
             sx = np.asarray(sphi, dtype=float) / 1e14
             scol = _sim_color_for(name)
             sg_q = ROOT.TGraph(len(sx), array('d', sx), array('d', np.asarray(schg, float)))
-            sg_q.SetLineColor(scol); sg_q.SetLineWidth(3)
+            sg_q.SetLineColor(scol); sg_q.SetLineWidth(2)
             sg_q.Draw("l same")
             sg_v = ROOT.TGraph(len(sx), array('d', sx),
                                array('d', np.asarray(sbias, float) * scale))
-            sg_v.SetLineColor(scol); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
+            sg_v.SetLineColor(scol); sg_v.SetLineWidth(1); sg_v.SetLineStyle(2)
             sg_v.Draw("l same")
             leg.AddEntry(sg_q, "%s  sim. Charge (solid)" % name, "l")
             leg.AddEntry(sg_v, "%s  sim. Bias (dashed)" % name, "l")
@@ -368,6 +403,7 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
     raxis.Draw()
 
     leg.Draw()
+    _cms()
     c.Update()
     _KEEP.extend([frame, raxis, leg, c])
     if save:
@@ -393,7 +429,7 @@ def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
         phi = np.linspace(0, hi, 120)
         V = np.array([surf.V_for_Q(Q_target, ph) for ph in phi])
         g = ROOT.TGraph(len(phi), array('d', phi), array('d', np.nan_to_num(V)))
-        g.SetLineColor(palette[k % len(palette)]); g.SetLineWidth(3)
+        g.SetLineColor(palette[k % len(palette)]); g.SetLineWidth(2)
         g.SetTitle(f"Bias to reach Q = {Q_target:.0f} fC;"
                    f"#phi [n_{{eq}}/cm^{{2}}];V_{{{Q_target:.0f}fC}} [V]")
         if first:
@@ -401,7 +437,7 @@ def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
         else:
             g.Draw("l same")
         leg.AddEntry(g, name, "l"); _KEEP.append(g)
-    leg.Draw(); c.Update(); _KEEP.extend([leg, c])
+    leg.Draw(); _cms(); c.Update(); _KEEP.extend([leg, c])
     if save:
         c.SaveAs(save)
     return c

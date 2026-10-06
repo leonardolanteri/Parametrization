@@ -75,7 +75,7 @@ def main():
             plots.plot_param_laws(surf,
                                   save=os.path.join(outdir, f"param_laws_{s}.pdf"))
             plots.plot_surface_vs_data(sensors, surf,
-                                       save=os.path.join(outdir, f"surface_vs_data_{s}.pdf"))
+                                       save=os.path.join(outdir, f"param_pred_{s}.pdf"))
             plots.plot_bias_for_target({name: surf},
                                        save=os.path.join(outdir, f"bias_{s}.pdf"))
             plots.plot_charge_bias_vs_fluence(
