@@ -52,7 +52,8 @@ def main():
     sheets = [args.production] if args.production else data_io.productions(sensors)
     results = {prod: model.fit_production(sensors, prod) for prod in sheets}
 
-    # global smooth surfaces (one trend over the whole range, floor at Q_FLOOR)
+    # global simultaneous surfaces (one smooth trend over the whole range; the
+    # free p0 term makes the charge decay to the bulk value on its own)
     surfaces = {name: model.fit_global(sensors, name) for name in sheets}
 
     print(f"\nBias to reach Q = {config.Q_TARGET:.0f} fC (global surface):")

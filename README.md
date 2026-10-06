@@ -53,23 +53,22 @@ converges without per-point tuning. Only uniform physical bounds are applied
 
 Combined: `Q(V,φ) = P0(φ) + P1(φ)·V + exp( P2(φ) + P3(φ)·V )`.
 
-**Analytic model (recommended).** The headline model is a reduced two-step
-parametrization with analytic parameter laws:
-
-1. fix `p0 = Q_FLOOR = 0.55 fC` (no-gain bulk charge) and drop the redundant `p1`
-   → per fluence fit the reduced curve `Q(V) = Q_FLOOR + exp(p2 + p3·V)`;
-2. give each parameter an **analytic law** `p2(φ)`, `p3(φ)` (linear or exponential,
-   auto by AIC — never `interp`).
+**Global simultaneous model (recommended).** The headline model is a single fit
+of the whole surface to all `(V, φ, Q)` points at once, with an exponential law
+for each fluence-dependent parameter:
 
 ```
-Q(V,φ) = Q_FLOOR + exp( p2(φ) + p3(φ)·V )
+Q(V,φ) = p0 + p1(φ)·V + exp( p2(φ) + p3(φ)·V )
+p_k(φ) = a_k + exp( b_k·φ + c_k )            # k = 1,2,3
 ```
 
-Removing the degenerate `p0,p1` makes `p2(φ)`, `p3(φ)` smooth and monotonic, so one
-analytic law describes the whole fluence range (no kink) and the charge converges
-to `Q_FLOOR` at high fluence (not to 0). Built by `model.fit_global` →
-`model.GlobalSurface` (`.p2(φ)`, `.p3(φ)`, `.Q(V,φ)`, `.V_for_Q`, `.tf2()`); the
-4-parameter per-fluence fits remain as diagnostics.
+`p0` is a **free** global constant (no floor imposed): it comes out ~0.3–0.5 fC,
+the no-gain bulk charge, so the charge decays to it **on its own** at high fluence
+(the gain term →0), never to 0. Fitting all fluences together forces the
+parameters onto smooth `exp` laws, which breaks the per-fluence degeneracy (no
+high-fluence outlier) — for HPK, χ²/ndf ≈ 26/50, prediction RMS ≈ 0.66 fC. Built
+by `model.fit_global` → `model.SimulSurface` (`.p1/.p2/.p3(φ)`, `.Q(V,φ)`,
+`.V_for_Q`, `.tf2()`); the 4-parameter per-fluence fits remain as diagnostics.
 
 ## Settings (`config.py`)
 

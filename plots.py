@@ -141,27 +141,32 @@ def plot_prediction(result, save=None):
 
 def plot_param_laws(surface, save=None):
     """
-    The two parameters of Q(V)=exp(p2+p3*V): p2(phi) and p3(phi), with the
-    per-fluence (log-linear) points and the fitted analytic law.
+    The three fluence-dependent parameters of the global surface
+    Q(V,phi)=p0+p1(phi)*V+exp(p2(phi)+p3(phi)*V): p1(phi), p2(phi), p3(phi), each
+    with its exponential law and the propagated uncertainty at the measured
+    fluences (markers lie on the law by construction -- it is one global fit).
     """
     prod = surface.production
     phi = surface.fluences
     phi_err = array('d', [config.RELERR_PHI * p for p in phi])
     xs = np.linspace(-0.05e15, max(phi.max() * 1.15, 1e15), 250)
     c = ROOT.TCanvas(_cname("cPL_" + model._short(prod)),
-                     "parameter laws - " + prod, 900, 400)
-    c.Divide(2, 1)
+                     "parameter laws - " + prod, 1200, 400)
+    c.Divide(3, 1)
     keep = []
-    specs = [(surface.p2_nodes, surface.p2_err, surface.law2, surface.p2, 'p2'),
+    specs = [(surface.p1_nodes, surface.p1_err, surface.law1, surface.p1, 'p1'),
+             (surface.p2_nodes, surface.p2_err, surface.law2, surface.p2, 'p2'),
              (surface.p3_nodes, surface.p3_err, surface.law3, surface.p3, 'p3')]
     for j, (nodes, errs, law, fn, nm) in enumerate(specs):
-        c.cd(j + 1); ROOT.gPad.SetLeftMargin(0.17); ROOT.gPad.SetBottomMargin(0.14)
-        g = ROOT.TGraphErrors(len(phi), array('d', phi), array('d', nodes),
-                              phi_err, array('d', errs))
+        c.cd(j + 1); ROOT.gPad.SetLeftMargin(0.19); ROOT.gPad.SetBottomMargin(0.14)
+        g = ROOT.TGraphErrors(len(phi), array('d', phi),
+                              array('d', np.asarray(nodes, dtype=float)),
+                              phi_err, array('d', np.asarray(errs, dtype=float)))
         g.SetTitle(f"{nm}(#phi)  [{law['kind']}] - {prod};"
                    f"#phi [n_{{eq}}/cm^{{2}}];{nm}")
         g.SetMarkerStyle(21); g.SetMarkerSize(1.1); g.Draw("ap")
-        gl = ROOT.TGraph(len(xs), array('d', xs), array('d', fn(xs)))
+        gl = ROOT.TGraph(len(xs), array('d', xs),
+                         array('d', np.asarray(fn(xs), dtype=float)))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
         keep += [g, gl]
     c.Update(); _KEEP.extend(keep + [c])
@@ -195,7 +200,7 @@ def plot_surface_vs_data(sensors, surface, setup=None, save=None):
         gr.SetMarkerStyle(20); gr.SetMarkerSize(0.8); gr.Draw("ap")
         vmin, vmax_ = float(V.min()), float(V.max())
         xs = np.linspace(vmin, vmax_, 200)
-        ys = surface.Q_gain(xs, phi)          # raw model (no floor) vs data
+        ys = surface.Q(xs, phi)               # full global surface vs data
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(2); gl.Draw("l same")
         _KEEP.extend([gr, gl])
@@ -236,9 +241,9 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
     """
     Charge obtained and bias needed vs fluence, with the SEB cap.
 
-    `surfaces`: dict {name: GlobalSurface} (or a single GlobalSurface). The
-    global surface is one smooth trend over the whole range and asymptotes to the
-    no-gain floor (config.Q_FLOOR), so the charge decays to ~0.55 fC, not to 0.
+    `surfaces`: dict {name: SimulSurface} (or a single surface). The global
+    surface is one smooth trend over the whole range; its free p0 term makes the
+    charge decay on its own to the bulk value (~0.3-0.5 fC), not to 0.
 
     For each production, over a fluence grid:
       * dashed (right axis, Bias): V needed to reach `target` charge, capped at
@@ -277,7 +282,7 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         col = _color_for(name)
 
         Qvm = surf.Q(Vm, phi)                        # charge available at V_SEB
-        Qobt = np.minimum(target, Qvm)               # surf.Q already >= Q_floor
+        Qobt = np.minimum(target, Qvm)               # obtainable = min(target, avail.)
         Vneed = np.empty_like(phi)
         for i, ph in enumerate(phi):
             if Qvm[i] >= target:

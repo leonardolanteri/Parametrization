@@ -32,8 +32,11 @@ RELERR_PHI = 0.10    # relative fluence error (10%)
 PARAM_MODE = "interp"
 MIN_PTS_FOR_EXP = 4
 
-# law used for the analytic parameter laws p2(phi), p3(phi) of the main model
-# (model.fit_global): 'auto' (lin/exp per parameter by AIC), 'lin', or 'exp'.
+# NOTE on the main model (model.fit_global): it is a single GLOBAL SIMULTANEOUS
+# fit of  Q(V,phi) = p0 + p1(phi)*V + exp(p2(phi)+p3(phi)*V)  to all (V,phi,Q)
+# points at once, with an exponential law for each p1,p2,p3 and p0 a free global
+# constant. It does not use PARAM_MODE / LAW_MODE (those drive the older
+# per-fluence diagnostic path only).
 LAW_MODE = "auto"
 
 # --- analysis knobs ---------------------------------------------------------
@@ -49,9 +52,11 @@ V_SEB_DEFAULT = 550.0
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
 PLATEAU_CHARGE = 15.0
 
-# no-gain floor [fC]: charge collected by a diode once the gain layer is gone
-# (bulk MIP charge). The global surface asymptotes to this at high fluence.
-Q_FLOOR = 0.55
+# expected no-gain (bulk) charge [fC]: charge a diode collects once the gain
+# layer is gone. It is NOT imposed on the fit -- the global model's free p0 comes
+# out ~0.3-0.5 fC on its own (compatible with this within the experimental
+# uncertainty). Kept here only as the physical reference value.
+Q_FLOOR = 0.5
 
 
 def set_charge_error(value):

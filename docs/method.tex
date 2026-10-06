@@ -151,44 +151,57 @@ numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is scanned on a dense $V$ grid and t
 non--monotonic behaviour of a degenerate fit); \code{NaN} if $Q^\star$ is never
 reached.
 
-\section{The analytic model: gain term with a physical floor}
+\section{The global simultaneous model}
 \label{sec:global}
-The four--parameter form of Eq.~\ref{eq:qv} is over--parametrized for this data:
-the per--fluence fits give $p_0$ and $p_1$ with relative errors of several hundred
-to several million percent (they are not determined), and $p_0,p_1,p_2$ are
-strongly anti--correlated. Using independent laws for all four makes the surface
-diverge (prediction RMS $\sim\!28\,\fC$ vs $\sim\!1.5\,\fC$ below). The data
-constrain only the \emph{gain} term, so the model keeps just that:
+Fitting each fluence \emph{independently} (Sec.~\ref{sec:step1}) and then fitting
+the resulting parameters is unreliable here: at a fixed fluence the four
+parameters are strongly degenerate (the exponential can mimic the polynomial over
+the measured $V$ range), so the per--fluence values do \emph{not} follow any
+smooth trend --- e.g.\ the pure--gain exponent $p_2$ jumps back up at the highest
+fluence instead of continuing to fall. Independent laws then inherit this scatter
+and the surface is poor at high fluence.
+
+The cure is to impose the smoothness \emph{during} the fit: a single
+\emph{global simultaneous} least squares to all $(V,\phi,Q)$ points at once, in
+which each voltage parameter is replaced by its law of fluence,
 \begin{equation}
-  \boxed{\,Q(V,\phi) = \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
+  \boxed{\,Q(V,\phi) = p_0 + p_1(\phi)\,V +
+          \exp\!\big(p_2(\phi) + p_3(\phi)\,V\big)\,}
   \label{eq:global}
 \end{equation}
-
-\paragraph{Physical floor.} The collected charge never drops below the no--gain
-(bulk MIP) charge $Q_{\mathrm{floor}} = \SI{0.55}{\fC}$ (\code{config.Q\_FLOOR}):
-at very high fluence, whatever the voltage, the minimum is $Q_{\mathrm{floor}}$.
-This is imposed as a \emph{floor} (a clamp), not as an additive constant, so it
-does not inflate $Q$ in the operating range:
 \begin{equation}
-  Q_{\mathrm{phys}}(V,\phi) = \max\!\big(Q_{\mathrm{floor}},\,
-      \exp(p_2(\phi)+p_3(\phi)V)\big).
+  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),\qquad k=1,2,3,
+  \label{eq:laws}
 \end{equation}
-Because the gain exponent decreases with fluence, $\exp(\dots)\to0$ at high $\phi$
-and the clamp delivers a flat $Q_{\mathrm{floor}}$ for every $V$ --- consistent
-with the physics, and impossible with a $p_0$ (which would set the floor at $0\,$V
-too) or a $p_1 V$ term (which would make the high--$\phi$ charge grow with $V$).
+with $p_0$ a \emph{free global constant}. There are ten parameters
+($p_0$ and three triplets $a_k,b_k,c_k$), fitted together with
+\code{scipy.optimize.curve\_fit} under the physical bounds $a_1,a_3\ge0$ (so
+$p_1,p_3\ge0$: the charge never decreases with bias). Because the fluence
+dependence is forced through the smooth laws of Eq.~\ref{eq:laws}, the
+degeneracy at each fluence is resolved by the neighbouring fluences --- among the
+near--equivalent per--fluence parameter combinations the fit selects the one that
+lies on a smooth $\exp$/linear trend. The high--fluence outlier disappears and,
+for HPK, the fit reaches $\chi^2/\mathrm{ndf}\approx26/50$ and a prediction RMS of
+$\SI{0.66}{\fC}$.
 
-\paragraph{Step A (per fluence).} $p_2,p_3$ are obtained from a \emph{linear
-regression of} $\ln Q$ \emph{vs} $V$ (the exact, bound--free, seed--free fit for an
-exponential; weight $Q^2$ for the $\sigma_Q=$const error). This is stable where a
-direct $\exp$ fit can diverge.
+\paragraph{The bulk charge emerges, it is not imposed.} $p_0$ is left free and
+comes out $\approx\SI{0.3}{\fC}$ for HPK --- compatible, within the experimental
+charge uncertainty, with the expected no--gain (bulk MIP) charge of
+$\sim\SI{0.5}{\fC}$ (\code{config.Q\_FLOOR}, kept only as a reference value).
+Thus the charge decays \emph{on its own} towards the bulk value at high fluence
+(the gain term $\exp(p_2+p_3V)\to0$ as $\phi$ grows): no floor and no clamp are
+applied. Both $p_0$ and the linear term $p_1(\phi)V$ are kept --- the data show
+$p_1$ matters more than $p_0$ (dropping $p_1$ worsens the fit, dropping $p_0$ does
+not), and $p_1(\phi)\to0$ at high fluence so it does not spoil the convergence.
 
-\paragraph{Step B (vs fluence).} Each of $p_2(\phi),p_3(\phi)$ gets an analytic
-law (linear or exponential, chosen by AIC, Sec.~\ref{sec:step2}; \code{interp}
-is never used here). For HPK both come out exponential. The bias for a target
-charge $Q^\star$ is explicit, $V(\phi) = [\ln Q^\star - p_2(\phi)]/p_3(\phi)$.
-This model is \code{model.GlobalSurface} / \code{model.fit\_global}; the
-four--parameter per--fluence fits of Sec.~\ref{sec:step1} remain as diagnostics.
+\paragraph{Uncertainties and inverse.} The covariance of the ten parameters is
+propagated to a band on each $p_k(\phi)$ (shown on the parameter--law figure). The
+bias for a target charge $Q^\star$ is obtained by inverting Eq.~\ref{eq:global}
+numerically (\code{V\_for\_Q}): $Q(V,\phi)$ is monotonic in $V$ (since
+$p_1,p_3\ge0$), so the single upward crossing of $Q^\star$ is returned, or
+\code{NaN} if it is never reached. This model is \code{model.SimulSurface} /
+\code{model.fit\_global}; the four--parameter per--fluence fits of
+Sec.~\ref{sec:step1} remain as diagnostics.
 
 \section{Operating point with the SEB limit}
 Each production has a single--event--burnout ceiling $V_{\mathrm{SEB}}$
@@ -204,11 +217,12 @@ $\code{PLATEAU\_CHARGE}=\SI{15}{\fC}$):
 Below the ``SEB knee'' the target is reached within $V_{\mathrm{SEB}}$ so
 $Q_{\mathrm{obt}}=Q^\star$ (flat); beyond it the device is stuck at
 $V_{\mathrm{SEB}}$ and delivers the smaller charge $Q(V_{\mathrm{SEB}},\phi)$,
-which falls with fluence towards $Q_{\mathrm{floor}}$. Here $Q(V_{\mathrm{SEB}},\phi)$
+which falls with fluence towards the bulk charge $p_0$. Here $Q(V_{\mathrm{SEB}},\phi)$
 is taken from the global surface of Sec.~\ref{sec:global}, so the curve is a single
-smooth trend and the charge converges to $Q_{\mathrm{floor}}=\SI{0.55}{\fC}$, not to
-zero. These are the solid (charge, left axis) and dashed (bias, right axis) curves
-of the operating--point figure.
+smooth trend and the charge converges to $p_0\approx\SI{0.3}{\fC}$ on its own (the
+expected bulk value $\sim\SI{0.5}{\fC}$ within uncertainty), not to zero. These are
+the solid (charge, left axis) and dashed (bias, right axis) curves of the
+operating--point figure.
 
 \section{Caveats}
 \begin{itemize}[nosep]
