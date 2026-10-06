@@ -24,3 +24,6 @@ parameters_*.csv
 !parametrization_data.xlsx
 !docs/method.pdf
 !docs/method.tex
+
+# Excel lock/temp files
+~$*
