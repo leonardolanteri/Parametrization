@@ -518,34 +518,37 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
     V = np.concatenate(Vs); PHI = np.concatenate(Phis); Q = np.concatenate(Qs)
     n_real = len(Q)
 
-    # bulk anchor: soft synthetic points Q = Q_FLOOR (flat in V) at high fluence,
-    # so the gain-dominated extrapolation decays to the known bulk charge. These
-    # are a physical prior, not data: the reported chi2/RMS use the real points.
+    # bulk constraint: soft points Q = Q_inf (flat in V) at high fluence, so the
+    # gain-dominated extrapolation decays to the known per-production bulk charge.
+    # A physical prior, not data: the reported chi2/RMS use the real points only.
+    q_inf = float(config.Q_INF.get(production, config.Q_INF_DEFAULT))
     if config.ANCHOR_FLOOR and config.ANCHOR_PHIS:
         vmax = float(config.V_SEB.get(production, config.V_SEB_DEFAULT))
         vgrid = np.linspace(float(V.min()), vmax, 6)
         aV, aPHI, aQ = [], [], []
         for pha in config.ANCHOR_PHIS:
             aV.extend(vgrid); aPHI.extend([float(pha)] * len(vgrid))
-            aQ.extend([config.Q_FLOOR] * len(vgrid))
+            aQ.extend([q_inf] * len(vgrid))
         V = np.concatenate([V, aV]); PHI = np.concatenate([PHI, aPHI])
         Q = np.concatenate([Q, aQ])
     sigma = np.full_like(Q, config.ERR_Q)
     sigma[n_real:] = config.ANCHOR_ERR          # anchor points get their own weight
 
+    p0lo, p0hi = config.P0_BOUNDS           # asymptote constrained to [0, ~1] fC
+    p0seed = min(max(q_inf, p0lo), p0hi)    # seed the asymptote at the bulk target
     if p0law:
         model = _simul_charge_p0law
-        #       p0            p1           p2            p3
-        seed = [0.3, -5., -2., 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
-        lo = [0., -80., -80., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
-        hi = [5., 80., 80., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
+        #       p0               p1           p2            p3
+        seed = [p0seed, -5., -2., 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
+        lo = [p0lo, -80., -80., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [p0hi, 80., 80., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
         starts = {0: 0, 1: 3, 2: 6, 3: 9}       # start index of each triplet
     else:
         model = _simul_charge_p0const
-        #       p0    p1           p2            p3
-        seed = [0.4, 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
-        lo = [0., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
-        hi = [5., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
+        #       p0      p1           p2            p3
+        seed = [p0seed, 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
+        lo = [p0lo, 0., -80., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [p0hi, 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
         starts = {1: 1, 2: 4, 3: 7}             # p0 is the scalar at index 0
 
     popt, pcov = _curve_fit(model, (V, PHI), Q, p0=seed, sigma=sigma,

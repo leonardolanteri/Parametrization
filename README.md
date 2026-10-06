@@ -80,7 +80,9 @@ by `model.fit_global` → `model.SimulSurface` (`.p1/.p2/.p3(φ)`, `.Q(V,φ)`,
 | `PARAM_MODE` | vs-φ law | `auto` |
 | `Q_TARGET` | target charge [fC] | `8.0` |
 | `PLATEAU_CHARGE` | target for the operating-point figure [fC] | `15.0` |
-| `Q_FLOOR` | no-gain (bulk) charge the surface asymptotes to [fC] | `0.55` |
+| `Q_INF` | per-production bulk charge the surface asymptotes to [fC] | HPK 0.50, FBK 0.55 |
+| `P0_BOUNDS` | window the high-φ asymptote p0 is constrained to [fC] | `(0, 1)` |
+| `ANCHOR_FLOOR` | soft high-φ pull to `Q_INF` (needed where the gain decay isn't in the data) | `True` |
 | `LAW_MODE` | analytic law for `p2(φ)`,`p3(φ)`: `auto` (lin/exp by AIC), `lin`, `exp` | `auto` |
 | `V_SEB` | per-production SEB bias ceiling [V] | HPK 550, FBK 600 |
 

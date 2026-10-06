@@ -60,20 +60,26 @@ V_SEB_DEFAULT = 550.0
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
 PLATEAU_CHARGE = 15.0
 
-# no-gain (bulk) charge [fC]: the charge a diode collects once the gain layer is
-# gone. Same for every production. The surface must decay to this at high fluence.
-Q_FLOOR = 0.55
+# no-gain (bulk) charge [fC] the surface must decay to at high fluence -- the
+# PER-PRODUCTION high-fluence asymptote. Matched by exact production name.
+Q_INF = {"HPK": 0.50, "HPK6": 0.50, "FBK": 0.55, "FBK-LF": 0.55}
+Q_INF_DEFAULT = 0.50
 
-# Anchor the fit to the bulk charge at high fluence. With few/low fluence points
-# the gain term is unconstrained far beyond the data and the extrapolated charge
-# can plateau well above Q_FLOOR (e.g. FBK, measured only up to 1.5e15). When True,
-# the global fit adds soft synthetic points Q = Q_FLOOR (flat in V) at ANCHOR_PHIS,
-# weighted like the data (ERR_Q), so the surface decays to the bulk on its own.
-# This is a physical prior (known asymptote), not a hard clamp; the real-data fit
-# quality is essentially unchanged. Set False to fit the data alone.
+# The high-fluence asymptote p0 is constrained to this window [fC] (bounded, not a
+# hard value): the collected charge settles to the bulk, between 0 and ~1 fC.
+P0_BOUNDS = (0.0, 1.0)
+
+# Pull the surface to its bulk asymptote at high fluence. With few / low fluence
+# points the gain-decay rate is NOT in the data (e.g. FBK is measured only up to
+# 1.5e15, where Q is still 2-10 fC), so the extrapolated charge would otherwise
+# plateau well above the bulk. When True the global fit adds a soft high-fluence
+# constraint Q = Q_INF (flat in V) at ANCHOR_PHIS, weighted by ANCHOR_ERR, so the
+# surface decays to the per-production bulk. It is a physical prior on the known
+# asymptote, not a hard clamp, and leaves the real-data fit essentially unchanged.
+# Set False to fit the data alone (then sparse productions will not converge).
 ANCHOR_FLOOR = True
-ANCHOR_PHIS = [2.5e15, 4.0e15, 7.0e15, 1.2e16]   # fluences of the bulk anchor
-ANCHOR_ERR = 0.5                 # [fC] weight of the anchor (smaller = stronger pull)
+ANCHOR_PHIS = [2.5e15, 4.0e15, 7.0e15, 1.2e16]   # fluences of the bulk constraint
+ANCHOR_ERR = 0.5                 # [fC] weight (smaller = stronger pull to Q_INF)
 
 
 def set_charge_error(value):
