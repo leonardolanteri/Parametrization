@@ -71,7 +71,7 @@ def main():
         for name, r in results.items():
             s = model._short(name)
             surf = surfaces[name]
-            plots.plot_QV(sensors, r, save=os.path.join(outdir, f"QV_{s}.pdf"))
+            plots.plot_QV(sensors, r, save=os.path.join(outdir, f"fit_QV_{s}.pdf"))
             plots.plot_param_laws(surf,
                                   save=os.path.join(outdir, f"param_laws_{s}.pdf"))
             plots.plot_surface_vs_data(sensors, surf,

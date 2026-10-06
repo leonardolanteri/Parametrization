@@ -1,0 +1,24 @@
+# Simulation curve (FBK, red) read by eye from the reference plot. Overlaid
+# (green charge / amber bias) on the charge/bias figure. Columns: fluence
+# [1e14 n_eq/cm^2], charge [fC], bias [V]. Approximate visual read-off; V_max=605 V.
+phi14,charge,bias
+1,15.0,210
+2,15.0,235
+3,15.0,260
+4,15.0,285
+5,15.0,310
+7,15.0,360
+9,15.0,410
+11,15.0,465
+13,15.0,525
+15,15.0,585
+16,15.0,605
+17,13.5,605
+18,9.0,605
+20,4.5,605
+22,3.0,605
+25,2.0,605
+30,1.2,605
+40,0.8,605
+60,0.68,605
+100,0.65,605

@@ -54,7 +54,7 @@ FIT_SETUP = "Beta"   # which setup is fitted; others are shown as cross-check
 # SEB bias limit per production [V] (single-event-burnout ceiling). Used by the
 # charge/bias-vs-fluence plot: above this bias the device cannot be operated, so
 # the obtainable charge is Q(V_SEB, phi). Matched by exact name or by substring.
-V_SEB = {"HPK": 550.0, "HPK6": 550.0, "FBK": 600.0, "FBK-LF": 600.0}
+V_SEB = {"HPK": 550.0, "HPK6": 550.0, "FBK": 605.0, "FBK-LF": 605.0}
 V_SEB_DEFAULT = 550.0
 
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)

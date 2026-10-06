@@ -16,12 +16,15 @@ import model
 
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
-# dashed grid lines at the axis ticks on every pad
+# dashed grid lines at the axis ticks on every pad -- kept thin and light
 ROOT.gStyle.SetPadGridX(True)
 ROOT.gStyle.SetPadGridY(True)
 ROOT.gStyle.SetGridStyle(2)        # 2 = dashed (3 = dotted)
-ROOT.gStyle.SetGridColor(ROOT.kGray + 1)
+ROOT.gStyle.SetGridColor(ROOT.kGray)
 ROOT.gStyle.SetGridWidth(1)
+# thinner lines in the PDF/PS output (1 is the minimum integer line width, so
+# scale all exported line widths down for fine grid/curves)
+ROOT.gStyle.SetLineScalePS(1.3)
 _KEEP = []
 
 
@@ -49,19 +52,28 @@ def _panel_layout(n):
 
 
 def _cms(canvas=None):
-    """Draw 'CMS ETL Preliminary' top-left. For a multi-pad figure pass the canvas
-    (labels the first panel's top-left corner); else it labels the current pad."""
-    t = ROOT.TLatex(); t.SetNDC(True); t.SetTextFont(42)
-    if canvas is not None:
-        canvas.cd(1)
-        t.SetTextSize(0.050)
-        t.DrawLatex(ROOT.gPad.GetLeftMargin(), 0.912,
-                    "#bf{CMS} #it{ETL Preliminary}")
-    else:
-        t.SetTextSize(0.038)
-        t.DrawLatex(ROOT.gPad.GetLeftMargin() + 0.01, 0.945,
-                    "#bf{CMS} #it{ETL Preliminary}")
+    """Draw 'CMS ETL Preliminary' top-left of the current single-pad figure."""
+    t = ROOT.TLatex(); t.SetNDC(True); t.SetTextFont(42); t.SetTextAlign(11)
+    t.SetTextSize(0.038)
+    t.DrawLatex(ROOT.gPad.GetLeftMargin(), 1.0 - ROOT.gPad.GetTopMargin() + 0.012,
+                "#bf{CMS} #it{ETL Preliminary}")
     _KEEP.append(t)
+
+
+def _pad_header(label, cms=False):
+    """In the current pad's top margin: condition `label` right-aligned, and (on the
+    first panel) 'CMS ETL Preliminary' left-aligned. Used instead of a ROOT pad
+    title so nothing overlaps the plot or the CMS tag."""
+    y = 1.0 - ROOT.gPad.GetTopMargin() + 0.012
+    r = ROOT.TLatex(); r.SetNDC(True); r.SetTextFont(42); r.SetTextAlign(31)
+    r.SetTextSize(0.050)
+    r.DrawLatex(1.0 - ROOT.gPad.GetRightMargin(), y, label)
+    _KEEP.append(r)
+    if cms:
+        t = ROOT.TLatex(); t.SetNDC(True); t.SetTextFont(42); t.SetTextAlign(11)
+        t.SetTextSize(0.052)
+        t.DrawLatex(ROOT.gPad.GetLeftMargin(), y, "#bf{CMS} #it{ETL Preliminary}")
+        _KEEP.append(t)
 
 
 def plot_QV(sensors, result, show_tb=True, save=None):
@@ -79,13 +91,13 @@ def plot_QV(sensors, result, show_tb=True, save=None):
         fit = result['perpoint'][phi]
         gr = fit['graph']
         gr.GetListOfFunctions().Clear()      # drop the red auto-drawn fit curve
-        gr.SetTitle(f"{prod} - {_phi_label(phi)};V [V];Q [fC]")
+        gr.SetTitle(";V [V];Q [fC]")
         gr.SetMarkerStyle(20); gr.SetMarkerSize(0.6)
         gr.SetMarkerColor(ROOT.kBlack); gr.SetLineColor(ROOT.kBlack)
         gr.Draw("ap")
         f = fit['tf1']; f.SetLineColor(ROOT.kAzure + 1); f.SetLineWidth(1)
         f.Draw("same")
-        leg = ROOT.TLegend(0.17, 0.72, 0.55, 0.88)
+        leg = ROOT.TLegend(0.17, 0.64, 0.55, 0.80)
         leg.SetBorderSize(0); leg.SetFillStyle(0)
         leg.AddEntry(gr, "%s (pooled)" % result['setup'], "pe")
         leg.AddEntry(f, "fit #chi^{2}/ndf=%.1f/%d" % (fit['chi2'], fit['ndf']), "l")
@@ -98,7 +110,7 @@ def plot_QV(sensors, result, show_tb=True, save=None):
                 leg.AddEntry(gtb, "test beam (check)", "p")
                 _KEEP.append(gtb)
         leg.Draw(); _KEEP.append(leg)
-    _cms(c)
+        _pad_header(f"{prod}  {_phi_label(phi)}", cms=(i == 0))
     c.Update(); _KEEP.append(c)
     if save:
         c.SaveAs(save)
@@ -193,8 +205,7 @@ def plot_param_laws(surface, save=None):
         g = ROOT.TGraphErrors(len(phi), array('d', phi), array('d', nodes),
                               phi_err, array('d', errs))
         unit = ' [fC]' if nm == 'p0' else ''
-        g.SetTitle(f"{nm}(#phi)  [{kind}] - {prod};"
-                   f"#phi [n_{{eq}}/cm^{{2}}];{nm}{unit}")
+        g.SetTitle(f";#phi [n_{{eq}}/cm^{{2}}];{nm}{unit}")
         g.SetMarkerStyle(21); g.SetMarkerSize(0.9); g.SetLineWidth(1)
         ys = np.asarray(fn(xs), dtype=float)
         # y-range adapts to the points (+/- band) and the law over the grid
@@ -206,8 +217,8 @@ def plot_param_laws(surface, save=None):
         g.GetYaxis().SetRangeUser(lo - pad, hi + pad)
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kAzure + 1); gl.SetLineWidth(1); gl.Draw("l same")
+        _pad_header(f"{prod}  {nm}(#phi) [{kind}]", cms=(j == 0))
         keep += [g, gl]
-    _cms(c)
     c.Update(); _KEEP.extend(keep + [c])
     if save:
         c.SaveAs(save)
@@ -236,7 +247,7 @@ def plot_surface_vs_data(sensors, surface, setup=None, save=None):
         Verr = array('d', np.full(len(V), config.ERR_V))
         Qerr = array('d', np.full(len(Q), config.ERR_Q))
         gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q), Verr, Qerr)
-        gr.SetTitle(f"{prod} - {_phi_label(phi)};V [V];Q [fC]")
+        gr.SetTitle(";V [V];Q [fC]")
         gr.SetMarkerStyle(20); gr.SetMarkerSize(0.6); gr.Draw("ap")
         vmin, vmax_ = float(V.min()), float(V.max())
         xs = np.linspace(vmin, vmax_, 200)
@@ -244,13 +255,13 @@ def plot_surface_vs_data(sensors, surface, setup=None, save=None):
         gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
         gl.SetLineColor(ROOT.kGreen + 2); gl.SetLineWidth(1); gl.SetLineStyle(2)
         gl.Draw("l same")
-        leg = ROOT.TLegend(0.17, 0.78, 0.55, 0.88)
+        leg = ROOT.TLegend(0.17, 0.70, 0.55, 0.82)
         leg.SetBorderSize(0); leg.SetFillStyle(0)
         leg.AddEntry(gr, "%s (pooled)" % setup, "pe")
         leg.AddEntry(gl, "param. prediction", "l")
         leg.Draw()
+        _pad_header(f"{prod}  {_phi_label(phi)}", cms=(i == 0))
         _KEEP.extend([gr, gl, leg])
-    _cms(c)
     c.Update(); _KEEP.append(c)
     if save:
         c.SaveAs(save)
@@ -282,12 +293,10 @@ def _color_for(name):
     return ROOT.kBlack
 
 
-def _sim_color_for(name):
-    """Deep-blue / deep-red for the simulation overlay (vs the azure/red data)."""
-    u = name.upper()
-    if 'FBK' in u:
-        return ROOT.TColor.GetColor("#8b0000")
-    return ROOT.TColor.GetColor("#15339e")        # deep blue (HPK)
+def _sim_colors():
+    """(charge, bias) colors for the simulation overlay -- green & amber, chosen to
+    stand out from the azure/red data-driven curves."""
+    return ROOT.kGreen + 2, ROOT.TColor.GetColor("#e0a000")   # green, amber/yellow
 
 
 def _load_sim(name):
@@ -383,13 +392,13 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         if sim is not None:
             sphi, schg, sbias = sim
             sx = np.asarray(sphi, dtype=float) / 1e14
-            scol = _sim_color_for(name)
+            scol_q, scol_v = _sim_colors()
             sg_q = ROOT.TGraph(len(sx), array('d', sx), array('d', np.asarray(schg, float)))
-            sg_q.SetLineColor(scol); sg_q.SetLineWidth(2)
+            sg_q.SetLineColor(scol_q); sg_q.SetLineWidth(2)
             sg_q.Draw("l same")
             sg_v = ROOT.TGraph(len(sx), array('d', sx),
                                array('d', np.asarray(sbias, float) * scale))
-            sg_v.SetLineColor(scol); sg_v.SetLineWidth(1); sg_v.SetLineStyle(2)
+            sg_v.SetLineColor(scol_v); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
             sg_v.Draw("l same")
             leg.AddEntry(sg_q, "%s  sim. Charge (solid)" % name, "l")
             leg.AddEntry(sg_v, "%s  sim. Bias (dashed)" % name, "l")
@@ -430,14 +439,14 @@ def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
         V = np.array([surf.V_for_Q(Q_target, ph) for ph in phi])
         g = ROOT.TGraph(len(phi), array('d', phi), array('d', np.nan_to_num(V)))
         g.SetLineColor(palette[k % len(palette)]); g.SetLineWidth(2)
-        g.SetTitle(f"Bias to reach Q = {Q_target:.0f} fC;"
-                   f"#phi [n_{{eq}}/cm^{{2}}];V_{{{Q_target:.0f}fC}} [V]")
+        g.SetTitle(f";#phi [n_{{eq}}/cm^{{2}}];V_{{{Q_target:.0f}fC}} [V]")
         if first:
             g.GetYaxis().SetRangeUser(0, 900); g.Draw("al"); first = False
         else:
             g.Draw("l same")
         leg.AddEntry(g, name, "l"); _KEEP.append(g)
-    leg.Draw(); _cms(); c.Update(); _KEEP.extend([leg, c])
+    leg.Draw(); _pad_header("Q = %.0f fC target" % Q_target, cms=True)
+    c.Update(); _KEEP.extend([leg, c])
     if save:
         c.SaveAs(save)
     return c
