@@ -78,6 +78,10 @@ def main():
                                    save=os.path.join(outdir, "bias.pdf"))
         plots.plot_charge_bias_vs_fluence(
             surfaces, save=os.path.join(outdir, "charge_bias_vs_fluence.pdf"))
+        # extra version with the simulation curves overlaid (simulation/<prod>.csv)
+        plots.plot_charge_bias_vs_fluence(
+            surfaces, overlay="auto",
+            save=os.path.join(outdir, "charge_bias_vs_fluence_sim.pdf"))
         print("\nplots saved in", outdir)
 
 

@@ -269,7 +269,7 @@ def _load_sim(name):
 def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
                                 phi_lo=1e14, phi_hi=1e16,
                                 charge_max=22.0, bias_max=660.0,
-                                overlay="auto", save=None):
+                                overlay=None, save=None):
     """
     Charge obtained and bias needed vs fluence, with the SEB cap.
 
@@ -348,15 +348,13 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
             scol = _sim_color_for(name)
             sg_q = ROOT.TGraph(len(sx), array('d', sx), array('d', np.asarray(schg, float)))
             sg_q.SetLineColor(scol); sg_q.SetLineWidth(3)
-            sg_q.SetMarkerColor(scol); sg_q.SetMarkerStyle(20); sg_q.SetMarkerSize(0.7)
-            sg_q.Draw("lp same")
+            sg_q.Draw("l same")
             sg_v = ROOT.TGraph(len(sx), array('d', sx),
                                array('d', np.asarray(sbias, float) * scale))
             sg_v.SetLineColor(scol); sg_v.SetLineWidth(2); sg_v.SetLineStyle(2)
-            sg_v.SetMarkerColor(scol); sg_v.SetMarkerStyle(24); sg_v.SetMarkerSize(0.7)
-            sg_v.Draw("lp same")
-            leg.AddEntry(sg_q, "%s  sim. Charge" % name, "lp")
-            leg.AddEntry(sg_v, "%s  sim. Bias" % name, "lp")
+            sg_v.Draw("l same")
+            leg.AddEntry(sg_q, "%s  sim. Charge (solid)" % name, "l")
+            leg.AddEntry(sg_v, "%s  sim. Bias (dashed)" % name, "l")
             _KEEP.extend([sg_q, sg_v])
 
     raxis = ROOT.TGaxis(phi_hi / 1e14, 0.0, phi_hi / 1e14, charge_max,
