@@ -6,6 +6,7 @@ ROOT plots for the Q(V, phi) parametrization. Each function takes the loaded
 kept alive in `_KEEP` so PyROOT does not garbage-collect them.
 """
 
+import os
 from array import array
 import numpy as np
 import ROOT
@@ -13,6 +14,18 @@ import ROOT
 import config
 import data_io
 import model
+
+_PALETTE = [ROOT.kAzure + 2, ROOT.kRed + 1, ROOT.kGreen + 2,
+            ROOT.kOrange + 7, ROOT.kMagenta + 1, ROOT.kCyan + 2]
+
+
+def _family(name):
+    u = str(name).upper()
+    if 'FBK' in u:
+        return 'FBK'
+    if 'HPK' in u:
+        return 'HPK'
+    return str(name)
 
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetOptFit(0)
@@ -306,13 +319,32 @@ def _sim_color_for(name):
     return ROOT.kGreen + 2                         # green (HPK)
 
 
+def _sim_path(name):
+    """Locate a simulation CSV for a production: exact short/full name, else a
+    prefix match (so FBKLF.csv still matches a renamed 'FBK-LF_PreSerie')."""
+    short = model._short(name)
+    for cand in (short, str(name)):
+        p = os.path.join(config.SIM_DIR, "%s.csv" % cand)
+        if os.path.exists(p):
+            return p
+    if not os.path.isdir(config.SIM_DIR):
+        return None
+    key = short.upper()
+    best = None
+    for f in os.listdir(config.SIM_DIR):
+        if not f.lower().endswith(".csv"):
+            continue
+        stem = os.path.splitext(f)[0].upper()
+        if key.startswith(stem) or stem.startswith(key):   # e.g. FBKLF <-> FBKLF_PRESERIE
+            if best is None or len(stem) > len(best[0]):
+                best = (stem, os.path.join(config.SIM_DIR, f))
+    return best[1] if best else None
+
+
 def _load_sim(name):
-    """Read simulation/<production>.csv -> (phi[n_eq], charge[fC], bias[V]) or None."""
-    import os
-    path = os.path.join(config.SIM_DIR, "%s.csv" % model._short(name))
-    if not os.path.exists(path):
-        path = os.path.join(config.SIM_DIR, "%s.csv" % name)
-    if not os.path.exists(path):
+    """Simulation curve for a production -> (phi[n_eq], charge[fC], bias[V]) or None."""
+    path = _sim_path(name)
+    if not path:
         return None
     import pandas as pd
     df = pd.read_csv(path, comment="#")
@@ -363,9 +395,11 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
 
     phi = np.logspace(np.log10(phi_lo), np.log10(phi_hi), 400)
     x = phi / 1e14
-    for name, surf in surfaces.items():
+    multi = len(surfaces) > 1
+    vm_drawn = set()
+    for idx, (name, surf) in enumerate(surfaces.items()):
         Vm = _vmax_for(name, vmax)
-        col = _color_for(name)
+        col = _PALETTE[idx % len(_PALETTE)] if multi else _color_for(name)
 
         Qvm = surf.Q(Vm, phi)                        # charge available at V_SEB
         Qobt = np.minimum(target, Qvm)               # obtainable = min(target, avail.)
@@ -383,15 +417,19 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         g_v.SetLineColor(col); g_v.SetLineWidth(2); g_v.SetLineStyle(2)
         g_v.Draw("l same")
 
-        ln = ROOT.TLine(x[0], Vm * scale, x[-1], Vm * scale)
-        ln.SetLineColor(col); ln.SetLineStyle(3); ln.SetLineWidth(1); ln.Draw("same")
-        txt = ROOT.TLatex(x[0] * 1.2, Vm * scale + 0.3,
-                          "V_{max}^{%s} = %.0f V" % (name, Vm))
-        txt.SetTextColor(col); txt.SetTextSize(0.030); txt.Draw("same")
+        if round(Vm) not in vm_drawn:      # one SEB line/label per distinct V_max
+            vm_drawn.add(round(Vm))
+            ln = ROOT.TLine(x[0], Vm * scale, x[-1], Vm * scale)
+            ln.SetLineColor(col); ln.SetLineStyle(3); ln.SetLineWidth(1); ln.Draw("same")
+            lab = "V_{max} = %.0f V" % Vm if multi else "V_{max}^{%s} = %.0f V" % (name, Vm)
+            txt = ROOT.TLatex(x[0] * 1.2, Vm * scale + 0.3, lab)
+            txt.SetTextColor(col if not multi else ROOT.kGray + 3)
+            txt.SetTextSize(0.030); txt.Draw("same")
+            _KEEP.extend([ln, txt])
 
         leg.AddEntry(g_q, "%s  Charge (solid)" % name, "l")
         leg.AddEntry(g_v, "%s  Bias (dashed)" % name, "l")
-        _KEEP.extend([g_q, g_v, ln, txt])
+        _KEEP.extend([g_q, g_v])
 
         # --- optional simulation overlay (deep blue), read from simulation/*.csv
         sim = _load_sim(name) if overlay == "auto" else (
@@ -457,3 +495,90 @@ def plot_bias_for_target(surfaces, Q_target=None, phi_hi=None, save=None):
     if save:
         c.SaveAs(save)
     return c
+
+
+def plot_production_comparison(sensors, surfaces, setup=None, save=None):
+    """
+    Compare several productions of the same family: one pad per measured fluence,
+    each showing the pooled data (markers) and the surface prediction (dashed) of
+    every production in a distinct colour.
+    """
+    setup = setup or config.FIT_SETUP
+    surfaces = {k: model.as_surface(v) for k, v in surfaces.items()}
+    names = list(surfaces)
+    fam = _family(names[0])
+    # union of measured fluences (rounded so equal fluences merge)
+    allf = sorted({round(ph / 1e13) * 1e13 for su in surfaces.values() for ph in su.fluences})
+    n = len(allf)
+    ncol, nrow = _panel_layout(n)
+    c = ROOT.TCanvas(_cname("cCmp_" + fam), "comparison " + fam, 460 * ncol, 400 * nrow)
+    c.Divide(ncol, nrow)
+    for i, ph in enumerate(allf):
+        c.cd(i + 1); ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetBottomMargin(0.13)
+        series = []
+        for j, (nm, su) in enumerate(surfaces.items()):
+            match = [f for f in su.fluences if abs(f - ph) <= max(0.05 * ph, 1e13)]
+            if not match:
+                continue
+            V, Q = data_io.pooled(sensors, nm, match[0], setup)
+            if not len(V):
+                continue
+            series.append((nm, match[0], np.asarray(V, float), np.asarray(Q, float),
+                           _PALETTE[j % len(_PALETTE)]))
+        if not series:
+            continue
+        vmin = min(s[2].min() for s in series); vmax = max(s[2].max() for s in series)
+        qmax = max(s[3].max() for s in series)
+        fr = ROOT.gPad.DrawFrame(vmin - 20, 0, vmax + 20, qmax * 1.18)
+        fr.SetTitle(";V [V];Q [fC]"); _KEEP.append(fr)
+        leg = ROOT.TLegend(0.17, 0.66, 0.60, 0.82); leg.SetBorderSize(0); leg.SetFillStyle(0)
+        for nm, phj, V, Q, col in series:
+            gr = ROOT.TGraphErrors(len(V), array('d', V), array('d', Q),
+                                   array('d', np.full(len(V), config.ERR_V)),
+                                   array('d', np.full(len(Q), config.ERR_Q)))
+            gr.SetMarkerStyle(20); gr.SetMarkerSize(0.6)
+            gr.SetMarkerColor(col); gr.SetLineColor(col); gr.Draw("p same")
+            xs = np.linspace(float(V.min()), float(V.max()), 150)
+            ys = np.asarray(surfaces[nm].Q(xs, phj), dtype=float)
+            gl = ROOT.TGraph(len(xs), array('d', xs), array('d', ys))
+            gl.SetLineColor(col); gl.SetLineWidth(1); gl.SetLineStyle(2); gl.Draw("l same")
+            leg.AddEntry(gr, nm, "p"); _KEEP.extend([gr, gl])
+        leg.Draw(); _KEEP.append(leg)
+        _pad_header(f"{fam}  {_phi_label(ph)}", cms=(i == 0))
+    c.Update(); _KEEP.append(c)
+    if save:
+        c.SaveAs(save)
+    return c
+
+
+def save_all(sensors, results, surfaces, outdir=None):
+    """
+    Write every plot to `outdir` (default config.PLOTS_DIR, overwriting): per
+    production fit_QV / param_laws / param_pred / bias / charge_bias (+ the
+    simulation overlay only when simulation/<prod>.csv exists), and, for each
+    family with >=2 productions, LF-vs-LC1 style comparison plots.
+    """
+    outdir = outdir or config.PLOTS_DIR
+    os.makedirs(outdir, exist_ok=True)
+    j = lambda f: os.path.join(outdir, f)                       # noqa: E731
+    for name, surf in surfaces.items():
+        s = model._short(name)
+        if results and name in results:
+            plot_QV(sensors, results[name], save=j(f"fit_QV_{s}.pdf"))
+        plot_param_laws(surf, save=j(f"param_laws_{s}.pdf"))
+        plot_surface_vs_data(sensors, surf, save=j(f"param_pred_{s}.pdf"))
+        plot_bias_for_target({name: surf}, save=j(f"bias_{s}.pdf"))
+        plot_charge_bias_vs_fluence({name: surf}, save=j(f"charge_bias_vs_fluence_{s}.pdf"))
+        if _load_sim(name) is not None:            # overlay only where a sim exists
+            plot_charge_bias_vs_fluence({name: surf}, overlay="auto",
+                                        save=j(f"charge_bias_vs_fluence_{s}_sim.pdf"))
+    # family comparisons (e.g. FBK-LF vs FBK-LC1)
+    fams = {}
+    for name, surf in surfaces.items():
+        fams.setdefault(_family(name), {})[name] = surf
+    for fam, group in fams.items():
+        if len(group) < 2:
+            continue
+        plot_charge_bias_vs_fluence(group, save=j(f"compare_{fam}_charge_bias.pdf"))
+        plot_production_comparison(sensors, group, save=j(f"compare_{fam}_QV.pdf"))
+    return outdir
