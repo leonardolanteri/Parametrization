@@ -285,15 +285,7 @@ def _vmax_for(name, vmax):
         return float(vmax)
     if vmax and name in vmax:
         return float(vmax[name])
-    d = config.V_SEB
-    if name in d:
-        return float(d[name])
-    u = name.upper()
-    if 'FBK' in u:
-        return float(d.get('FBK', config.V_SEB_DEFAULT))
-    if 'HPK' in u:
-        return float(d.get('HPK', config.V_SEB_DEFAULT))
-    return float(config.V_SEB_DEFAULT)
+    return float(config.v_seb_for(name))
 
 
 def _color_for(name):

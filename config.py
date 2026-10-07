@@ -87,3 +87,26 @@ def set_charge_error(value):
     global ERR_Q
     ERR_Q = float(value)
     return ERR_Q
+
+
+def _match(d, production, default):
+    """Per-production lookup: exact name first, then by family (FBK*/HPK*), else default."""
+    if production in d:
+        return d[production]
+    u = str(production).upper()
+    for fam in ("FBK", "HPK"):
+        if fam in u:
+            for k, v in d.items():
+                if fam in k.upper():
+                    return v
+    return default
+
+
+def q_inf_for(production):
+    """High-fluence bulk charge Q_inf [fC] for a production (family fallback)."""
+    return _match(Q_INF, production, Q_INF_DEFAULT)
+
+
+def v_seb_for(production):
+    """SEB bias ceiling [V] for a production (family fallback)."""
+    return _match(V_SEB, production, V_SEB_DEFAULT)

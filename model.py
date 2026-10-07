@@ -521,9 +521,9 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
     # bulk constraint: soft points Q = Q_inf (flat in V) at high fluence, so the
     # gain-dominated extrapolation decays to the known per-production bulk charge.
     # A physical prior, not data: the reported chi2/RMS use the real points only.
-    q_inf = float(config.Q_INF.get(production, config.Q_INF_DEFAULT))
+    q_inf = float(config.q_inf_for(production))
     if config.ANCHOR_FLOOR and config.ANCHOR_PHIS:
-        vmax = float(config.V_SEB.get(production, config.V_SEB_DEFAULT))
+        vmax = float(config.v_seb_for(production))
         vgrid = np.linspace(float(V.min()), vmax, 6)
         aV, aPHI, aQ = [], [], []
         for pha in config.ANCHOR_PHIS:
