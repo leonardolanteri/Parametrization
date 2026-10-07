@@ -417,15 +417,18 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
         g_v.SetLineColor(col); g_v.SetLineWidth(2); g_v.SetLineStyle(2)
         g_v.Draw("l same")
 
-        if round(Vm) not in vm_drawn:      # one SEB line/label per distinct V_max
+        if round(Vm) not in vm_drawn:      # one SEB line per distinct V_max
             vm_drawn.add(round(Vm))
             ln = ROOT.TLine(x[0], Vm * scale, x[-1], Vm * scale)
-            ln.SetLineColor(col); ln.SetLineStyle(3); ln.SetLineWidth(1); ln.Draw("same")
-            lab = "V_{max} = %.0f V" % Vm if multi else "V_{max}^{%s} = %.0f V" % (name, Vm)
-            txt = ROOT.TLatex(x[0] * 1.2, Vm * scale + 0.3, lab)
-            txt.SetTextColor(col if not multi else ROOT.kGray + 3)
-            txt.SetTextSize(0.030); txt.Draw("same")
-            _KEEP.extend([ln, txt])
+            ln.SetLineColor(col if not multi else ROOT.kGray + 2)
+            ln.SetLineStyle(3); ln.SetLineWidth(1); ln.Draw("same")
+            _KEEP.append(ln)
+        # one V_max label per production, stacked top-left so they never overlap
+        tv = ROOT.TLatex(); tv.SetNDC(True); tv.SetTextFont(42); tv.SetTextSize(0.030)
+        tv.SetTextColor(col)
+        tv.DrawLatex(0.155, 0.875 - 0.044 * idx,
+                     "V_{max}^{%s} = %.0f V" % (name, Vm))
+        _KEEP.append(tv)
 
         leg.AddEntry(g_q, "%s  Charge (solid)" % name, "l")
         leg.AddEntry(g_v, "%s  Bias (dashed)" % name, "l")
