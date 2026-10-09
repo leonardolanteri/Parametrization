@@ -59,8 +59,10 @@ def _phi_label(phi):
 
 def _law_eq_str(coeff, nm):
     """Compact 'p_k(phi) = ...' string with the fitted numbers, for a plot label."""
-    if coeff['kind'] == 'lin':                       # constant p0
-        return "%s = %.3f fC" % (nm, coeff['q'])
+    if coeff['kind'] == 'lin':
+        if abs(coeff['m']) < 1e-300:                 # constant p0
+            return "%s = %.3f fC" % (nm, coeff['q'])
+        return "%s(#phi) = %.2e #phi %+.3g" % (nm, coeff['m'], coeff['q'])
     return "%s(#phi) = %.3g + exp(%.2e #phi %+.2f)" % (
         nm, coeff['a'], coeff['b'], coeff['c'])
 

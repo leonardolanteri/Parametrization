@@ -390,22 +390,27 @@ def _p_law(a, b, c, s):
     return a + np.exp(np.clip(b * s + c, -50.0, 50.0))
 
 
-def _simul_charge_p0law(VPHI, a0, b0, c0, a1, b1, c1, a2, b2, c2, a3, b3, c3):
-    """p0,p1,p2,p3 all exponential laws of phi (12 parameters)."""
+# p2 is LINEAR in fluence, p2(phi) = q2 + m2*s. The gain amplitude is then
+# exp(p2) = exp(q2)*exp(m2*s): a SINGLE exponential decay in fluence (physical
+# acceptor-removal), gradual at low phi and vanishing at high phi (m2 < 0). An
+# exp law for p2 would make exp(p2) a DOUBLE exponential -- far too steep just
+# above phi=0, over-predicting the bias needed at low fluence.
+def _simul_charge_p0law(VPHI, a0, b0, c0, a1, b1, c1, q2, m2, a3, b3, c3):
+    """p0,p1,p3 exponential laws of phi; p2 linear (11 parameters)."""
     V, PHI = VPHI
     s = np.asarray(PHI, dtype=float) / PHI_SCALE
     V = np.asarray(V, dtype=float)
     p0 = _p_law(a0, b0, c0, s); p1 = _p_law(a1, b1, c1, s)
-    p2 = _p_law(a2, b2, c2, s); p3 = _p_law(a3, b3, c3, s)
+    p2 = q2 + m2 * s; p3 = _p_law(a3, b3, c3, s)
     return p0 + p1 * V + np.exp(np.clip(p2 + p3 * V, -50.0, 50.0))
 
 
-def _simul_charge_p0const(VPHI, p0, a1, b1, c1, a2, b2, c2, a3, b3, c3):
-    """p0 a free global constant; p1,p2,p3 exponential laws (10 parameters)."""
+def _simul_charge_p0const(VPHI, p0, a1, b1, c1, q2, m2, a3, b3, c3):
+    """p0 a free global constant; p1,p3 exponential laws; p2 linear (9 parameters)."""
     V, PHI = VPHI
     s = np.asarray(PHI, dtype=float) / PHI_SCALE
     V = np.asarray(V, dtype=float)
-    p1 = _p_law(a1, b1, c1, s); p2 = _p_law(a2, b2, c2, s); p3 = _p_law(a3, b3, c3, s)
+    p1 = _p_law(a1, b1, c1, s); p2 = q2 + m2 * s; p3 = _p_law(a3, b3, c3, s)
     return p0 + p1 * V + np.exp(np.clip(p2 + p3 * V, -50.0, 50.0))
 
 
@@ -463,7 +468,9 @@ class SimulSurface:
     @staticmethod
     def _law_str(law, nm):
         if law['kind'] == 'lin':
-            return f"{nm}       = {law['q']:+.4e} fC  (free global constant)"
+            if abs(law['m']) < 1e-300:           # constant (p0)
+                return f"{nm}       = {law['q']:+.4e} fC  (free global constant)"
+            return f"{nm}(phi) = {law['m']:+.4e}*phi {law['q']:+.4e}"
         return (f"{nm}(phi) = {law['a']:+.4e} + exp({law['b']:+.4e}*phi "
                 f"{law['c']:+.4e})")
 
@@ -489,6 +496,17 @@ def _exp_node_err(a, b, c, cov, phi):
     errs = []
     for si, Ei in zip(s, E):
         J = np.array([1.0, si * Ei, Ei])        # d p / d(a,b,c)
+        var = float(J @ cov @ J)
+        errs.append(np.sqrt(var) if np.isfinite(var) and var > 0 else 0.0)
+    return np.array(errs)
+
+
+def _lin_node_err(q, m, cov, phi):
+    """sigma[q + m*s] at each phi from the 2x2 covariance (s = phi/PHI_SCALE)."""
+    s = np.asarray(phi, dtype=float) / PHI_SCALE
+    errs = []
+    for si in s:
+        J = np.array([1.0, si])                 # d p / d(q,m)
         var = float(J @ cov @ J)
         errs.append(np.sqrt(var) if np.isfinite(var) and var > 0 else 0.0)
     return np.array(errs)
@@ -538,38 +556,46 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
 
     p0lo, p0hi = config.P0_BOUNDS           # asymptote constrained to [0, ~1] fC
     p0seed = min(max(q_inf, p0lo), p0hi)    # seed the asymptote at the bulk target
+    # layout per parameter: kind and start index. p2 is linear (q2, m2), the rest
+    # exponential (a,b,c); p0 is a constant when p0law is False.
     if p0law:
         model = _simul_charge_p0law
-        #       p0               p1           p2            p3
-        seed = [p0seed, -5., -2., 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
-        lo = [p0lo, -80., -80., 0., -80., -80., -80., -80., -80., 0., -80., -80.]
-        hi = [p0hi, 80., 80., 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
-        starts = {0: 0, 1: 3, 2: 6, 3: 9}       # start index of each triplet
+        #       p0(exp)          p1(exp)       p2(lin)    p3(exp)
+        seed = [p0seed, -5., -2., 0.0, -3., -8., -1.4, -1., 1e-3, -1., -4.]
+        lo = [p0lo, -80., -80., 0., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [p0hi, 80., 80., 0.1, 80., 80., 80., 0., 0.05, 80., 80.]
+        layout = {0: ('exp', 0), 1: ('exp', 3), 2: ('lin', 6), 3: ('exp', 8)}
     else:
         model = _simul_charge_p0const
-        #       p0      p1           p2            p3
-        seed = [p0seed, 0.0, -3., -8., -1.4, -1., 0.3, 1e-3, -1., -4.]
-        lo = [p0lo, 0., -80., -80., -80., -80., -80., 0., -80., -80.]
-        hi = [p0hi, 0.1, 80., 80., 80., 80., 80., 0.05, 80., 80.]
-        starts = {1: 1, 2: 4, 3: 7}             # p0 is the scalar at index 0
+        #       p0    p1(exp)       p2(lin)    p3(exp)
+        seed = [p0seed, 0.0, -3., -8., -1.4, -1., 1e-3, -1., -4.]
+        lo = [p0lo, 0., -80., -80., -80., -80., 0., -80., -80.]
+        hi = [p0hi, 0.1, 80., 80., 80., 0., 0.05, 80., 80.]
+        layout = {0: ('const', 0), 1: ('exp', 1), 2: ('lin', 4), 3: ('exp', 6)}
 
     popt, pcov = _curve_fit(model, (V, PHI), Q, p0=seed, sigma=sigma,
                             absolute_sigma=True, maxfev=600000, bounds=(lo, hi))
 
-    def _law(a, b, c):                          # a + exp(b*(phi/S)+c) -> standard form
-        return dict(kind='exp', a=float(a), b=float(b) / PHI_SCALE, c=float(c))
     coeffs, errs = {}, {}
-    if not p0law:
-        coeffs[0] = dict(kind='lin', m=0.0, q=float(popt[0]))
-        e00 = np.sqrt(pcov[0, 0]) if np.isfinite(pcov[0, 0]) else 0.0
-        errs[0] = np.full(len(flus), float(e00))
-    for k, idx in starts.items():
-        a, b, c = popt[idx:idx + 3]
-        coeffs[k] = _law(a, b, c)
-        try:
-            errs[k] = _exp_node_err(a, b, c, pcov[idx:idx + 3, idx:idx + 3], flus)
-        except Exception:
-            errs[k] = None
+    for k, (kind, idx) in layout.items():
+        if kind == 'const':
+            coeffs[k] = dict(kind='lin', m=0.0, q=float(popt[idx]))
+            e0 = np.sqrt(pcov[idx, idx]) if np.isfinite(pcov[idx, idx]) else 0.0
+            errs[k] = np.full(len(flus), float(e0))
+        elif kind == 'lin':                      # p2(phi) = q2 + m2*(phi/S)
+            q2, m2 = popt[idx], popt[idx + 1]
+            coeffs[k] = dict(kind='lin', m=float(m2) / PHI_SCALE, q=float(q2))
+            try:
+                errs[k] = _lin_node_err(q2, m2, pcov[idx:idx + 2, idx:idx + 2], flus)
+            except Exception:
+                errs[k] = None
+        else:                                    # exp: a + exp(b*(phi/S)+c)
+            a, b, c = popt[idx:idx + 3]
+            coeffs[k] = dict(kind='exp', a=float(a), b=float(b) / PHI_SCALE, c=float(c))
+            try:
+                errs[k] = _exp_node_err(a, b, c, pcov[idx:idx + 3, idx:idx + 3], flus)
+            except Exception:
+                errs[k] = None
 
     # fit quality on the REAL data points only (exclude the bulk anchor points)
     pred = model((V[:n_real], PHI[:n_real]), *popt)

@@ -170,9 +170,18 @@ which each voltage parameter is replaced by its law of fluence,
   \label{eq:global}
 \end{equation}
 \begin{equation}
-  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big),\qquad k=0,1,2,3,
+  p_k(\phi) = a_k + \exp\!\big(b_k\,\phi + c_k\big)\ \ (k=0,1,3),\qquad
+  p_2(\phi) = q_2 + m_2\,\phi .
   \label{eq:laws}
 \end{equation}
+The gain exponent $p_2$ is taken \emph{linear} on purpose: the gain amplitude is
+then $\exp(p_2)=\exp(q_2)\,e^{m_2\phi}$, a \emph{single} exponential decay in
+fluence (acceptor removal), gradual just above $\phi=0$ and vanishing at high
+$\phi$ (with $m_2<0$). An exponential law for $p_2$ would make $\exp(p_2)$ a
+\emph{double} exponential --- far too steep right after $\phi=0$, which
+over--predicts the bias needed at low fluence (e.g.\ it wrongly asked for
+${\sim}\SI{290}{\volt}$ instead of ${\sim}\SI{200}{\volt}$ to reach
+\SI{15}{\fC} at $\phi=\SI{1e14}{\neqcm}$).
 fitted together with \code{scipy.optimize.curve\_fit}. Because the fluence
 dependence is forced through the smooth laws of Eq.~\ref{eq:laws}, the degeneracy
 at each fluence is resolved by the neighbouring fluences --- among the
