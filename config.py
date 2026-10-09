@@ -60,6 +60,12 @@ V_SEB_DEFAULT = 550.0
 # target charge for the charge/bias-vs-fluence figure (the solid-line plateau)
 PLATEAU_CHARGE = 15.0
 
+# extra charge/bias-vs-fluence comparison figures: each entry is a list of exact
+# production names overlaid on one plot (any family mix). save_all writes, per
+# group, a log-x version and a linear-x version (up to COMPARE_LIN_PHI_MAX).
+COMPARE_GROUPS = [["HPK6", "FBK-LF_PreSerie"]]
+COMPARE_LIN_PHI_MAX = 3.0e15
+
 # no-gain (bulk) charge [fC] the surface must decay to at high fluence -- the
 # PER-PRODUCTION high-fluence asymptote. Matched by exact production name.
 Q_INF = {"HPK": 0.50, "HPK6": 0.50, "FBK": 0.55, "FBK-LF": 0.55}

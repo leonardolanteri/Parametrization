@@ -357,7 +357,7 @@ def _load_sim(name):
 def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
                                 phi_lo=1e14, phi_hi=1e16,
                                 charge_max=22.0, bias_max=660.0,
-                                overlay=None, save=None):
+                                overlay=None, logx=True, save=None):
     """
     Charge obtained and bias needed vs fluence, with the SEB cap.
 
@@ -379,7 +379,7 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
     surfaces = {k: model.as_surface(v) for k, v in surfaces.items()}
 
     c = ROOT.TCanvas(_cname("cQB_%d" % int(target)), "charge & bias vs fluence", 820, 640)
-    c.SetLogx(True)
+    c.SetLogx(bool(logx))
     c.SetLeftMargin(0.12)
     c.SetRightMargin(0.13)
     c.SetTopMargin(0.08)
@@ -395,7 +395,10 @@ def plot_charge_bias_vs_fluence(surfaces, target=None, vmax=None,
     leg.SetBorderSize(0)
     leg.SetFillStyle(0)
 
-    phi = np.logspace(np.log10(phi_lo), np.log10(phi_hi), 400)
+    if logx:
+        phi = np.logspace(np.log10(phi_lo), np.log10(phi_hi), 400)
+    else:
+        phi = np.linspace(phi_lo, phi_hi, 400)
     x = phi / 1e14
     multi = len(surfaces) > 1
     vm_drawn = set()
@@ -586,4 +589,14 @@ def save_all(sensors, results, surfaces, outdir=None):
             continue
         plot_charge_bias_vs_fluence(group, save=j(f"compare_{fam}_charge_bias.pdf"))
         plot_production_comparison(sensors, group, save=j(f"compare_{fam}_QV.pdf"))
+    # user-defined comparison groups (any mix): log-x and linear-x versions
+    for grp in getattr(config, "COMPARE_GROUPS", []):
+        sub = {n: surfaces[n] for n in grp if n in surfaces}
+        if len(sub) < 2:
+            continue
+        tag = "_".join(model._short(n) for n in sub)
+        plot_charge_bias_vs_fluence(sub, save=j(f"compare_{tag}_charge_bias.pdf"))
+        plot_charge_bias_vs_fluence(
+            sub, logx=False, phi_lo=0.0, phi_hi=config.COMPARE_LIN_PHI_MAX,
+            save=j(f"compare_{tag}_charge_bias_lin.pdf"))
     return outdir
