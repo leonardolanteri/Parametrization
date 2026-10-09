@@ -80,7 +80,8 @@ def load_sheet(path, sheet):
         records.append(dict(
             production=str(sheet).strip(),
             label=label,
-            fluence=_parse_fluence(label),
+            # nominal fluence from the label, rescaled to the measured dose
+            fluence=_parse_fluence(label) * config.fluence_scale_for(str(sheet).strip()),
             setup=_parse_setup(label),
             voltage=V[mask].to_numpy(dtype=float),
             charge=Q[mask].to_numpy(dtype=float),

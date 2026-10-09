@@ -82,6 +82,18 @@ ANCHOR_PHIS = [2.5e15, 4.0e15, 7.0e15, 1.2e16]   # fluences of the bulk constrai
 ANCHOR_ERR = 0.5                 # [fC] weight (smaller = stronger pull to Q_INF)
 
 
+# Per-production fluence correction (multiplicative). The Excel keeps the NOMINAL
+# fluence in the block labels; this rescales it to the measured dose for a given
+# production, applied when the data is read (data_io). Exact production name only.
+# e.g. FBK-LF_PreSerie received ~17% more fluence than nominal -> factor 1.17.
+FLUENCE_SCALE = {"FBK-LF_PreSerie": 1.17}
+
+
+def fluence_scale_for(production):
+    """Multiplicative fluence correction for a production (1.0 if none set)."""
+    return float(FLUENCE_SCALE.get(production, 1.0))
+
+
 def set_charge_error(value):
     """Convenience setter for the charge error, e.g. config.set_charge_error(2.0)."""
     global ERR_Q
