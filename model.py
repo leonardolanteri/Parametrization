@@ -522,11 +522,13 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
     # gain-dominated extrapolation decays to the known per-production bulk charge.
     # A physical prior, not data: the reported chi2/RMS use the real points only.
     q_inf = float(config.q_inf_for(production))
-    if config.ANCHOR_FLOOR and config.ANCHOR_PHIS:
+    phi_max = float(max(flus)) if len(flus) else 0.0
+    anchor_phis = [f * phi_max for f in config.ANCHOR_FACTORS] if phi_max > 0 else []
+    if config.ANCHOR_FLOOR and anchor_phis:
         vmax = float(config.v_seb_for(production))
         vgrid = np.linspace(float(V.min()), vmax, 6)
         aV, aPHI, aQ = [], [], []
-        for pha in config.ANCHOR_PHIS:
+        for pha in anchor_phis:
             aV.extend(vgrid); aPHI.extend([float(pha)] * len(vgrid))
             aQ.extend([q_inf] * len(vgrid))
         V = np.concatenate([V, aV]); PHI = np.concatenate([PHI, aPHI])
@@ -577,8 +579,8 @@ def fit_global(sensors, production, setup=None, verbose=True, p0_vs_phi=None, **
     rms = float(np.sqrt(np.mean((pred - Qr) ** 2)))
 
     if verbose:
-        anc = "" if not (config.ANCHOR_FLOOR and config.ANCHOR_PHIS) else \
-            f" + bulk anchor @ {', '.join('%.0e' % p for p in config.ANCHOR_PHIS)}"
+        anc = "" if not (config.ANCHOR_FLOOR and anchor_phis) else \
+            f" + bulk anchor @ {', '.join('%.1e' % p for p in anchor_phis)}"
         print(f"\n=== {production} ({setup}) global simultaneous fit "
               f"[p0 {'law' if p0law else 'const'}{anc}] ===")
         print(f"  n = {n_real} points over {len(flus)} fluences   "
